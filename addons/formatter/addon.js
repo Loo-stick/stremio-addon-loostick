@@ -3,15 +3,19 @@
  *
  * Agrège et reformatte les streams de plusieurs addons Stremio
  * Format inspiré d'AIOStreams
+ *
+ * Routes créées dynamiquement:
+ * - /formatter/manifest.json → Tous les streams combinés
+ * - /formatter/{addon}/manifest.json → Streams d'un seul addon
  */
 
-const { addonBuilder } = require('stremio-addon-sdk');
+const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const fetch = require('node-fetch');
 
 /**
  * Crée et configure l'addon Stream Formatter
  * @param {Object} config - Configuration
- * @returns {Object} { builder, setupRoutes, manifest }
+ * @returns {Object} { builder, setupRoutes, manifest, subAddons }
  */
 function createAddon(config = {}) {
     const torboxApiKey = config.torboxApiKey || process.env.TORBOX_API_KEY || '';
@@ -32,9 +36,10 @@ function createAddon(config = {}) {
             }
 
             const name = extractAddonName(url);
+            const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
             const service = extractServiceInfo(url);
-            addons.push({ name, url, service });
-            console.log(`[Formatter] Addon ${index}: ${name} (${service.shortName})`);
+            addons.push({ name, slug, url, service });
+            console.log(`[Formatter] Addon ${index}: ${name} (${service.shortName}) → /${slug}`);
             index++;
         }
 
@@ -198,19 +203,18 @@ function createAddon(config = {}) {
         if (extMatch) {
             info.extension = extMatch[1].toLowerCase();
         } else {
-            info.extension = 'mkv'; // Default
+            info.extension = 'mkv';
         }
 
-        // Filename (essaie d'extraire le nom du fichier)
+        // Filename
         const filenameMatch = fullText.match(/([A-Za-z0-9._-]+\.(mkv|mp4|avi))/i);
         if (filenameMatch) {
             info.filename = filenameMatch[1];
         } else {
-            // Utilise le titre nettoyé
             info.filename = (title || streamName || '').split('\n')[0].substring(0, 60);
         }
 
-        // Indexer (source)
+        // Indexer
         const indexerPatterns = [
             { pattern: /\[([A-Z0-9]+)\]/i, group: 1 },
             { pattern: /⚙️\s*([A-Za-z0-9]+)/i, group: 1 },
@@ -261,66 +265,48 @@ function createAddon(config = {}) {
     function formatStream(stream, addonName, service) {
         const info = parseStreamTitle(stream.title, stream.name);
 
-        // Détermine si c'est du debrid ou P2P
         const isDebrid = service.type === 'debrid';
         const isCached = info.cached || stream.name?.includes('⚡') || stream.name?.includes('[+]');
 
-        // === NAME TEMPLATE ===
-        // 🔍{addon.name} | {service.shortName}{cached::⚡} {type::Debrid[|🧲 DB]} | {type::p2p[[P2P]]}
+        // NAME
         let nameParts = [];
         nameParts.push(`🔍${addonName}`);
         nameParts.push(`${service.shortName}${isCached ? '⚡' : ''}`);
-
         if (isDebrid) {
             nameParts.push('🧲 DB');
         } else {
             nameParts.push('[P2P]');
         }
-
         const formattedName = nameParts.join(' | ');
 
-        // === DESCRIPTION TEMPLATE ===
-        // ℹ️ {quality} / {resolution} / {extension}
-        // 🎬 {filename}
-        // 🔍 {indexer}
-        // 💾 {size}
-        // 🔊 {languages}
-        // 👤 {seeders}
-
+        // DESCRIPTION
         let descParts = [];
 
-        // Ligne 1: Qualité / Resolution / Extension
         const qualityParts = [info.quality, info.resolution, info.type, info.hdr].filter(Boolean);
         if (qualityParts.length > 0) {
             descParts.push(`ℹ️ ${qualityParts.join(' / ')} / ${info.extension}`);
         }
 
-        // Ligne 2: Filename
         if (info.filename) {
             descParts.push(`🎬 ${info.filename}`);
         }
 
-        // Ligne 3: Indexer
         if (info.indexer) {
             descParts.push(`🔍 ${info.indexer}`);
         }
 
-        // Ligne 4: Size
         if (info.size) {
             descParts.push(`💾 ${info.size}`);
         }
 
-        // Ligne 5: Languages
         if (info.languages.length > 0) {
             descParts.push(`🔊 ${info.languages.join(' ')}`);
         }
 
-        // Ligne 6: Seeders
         if (info.seeders) {
             descParts.push(`👤 ${info.seeders}`);
         }
 
-        // Audio si présent
         if (info.audio) {
             descParts.push(`🔉 ${info.audio}`);
         }
@@ -374,16 +360,60 @@ function createAddon(config = {}) {
             const infoA = parseStreamTitle(a.title, a.name);
             const infoB = parseStreamTitle(b.title, b.name);
 
-            // Cached en premier
             if (infoA.cached !== infoB.cached) {
                 return infoA.cached ? -1 : 1;
             }
 
-            // Puis par qualité
             const orderA = qualityOrder[infoA.quality] ?? 5;
             const orderB = qualityOrder[infoB.quality] ?? 5;
             return orderA - orderB;
         });
+    }
+
+    /**
+     * Crée un builder pour un addon spécifique ou combiné
+     */
+    function createBuilder(addonInfo, isCombined = false) {
+        const manifest = {
+            id: isCombined
+                ? 'community.stream.formatter'
+                : `community.stream.formatter.${addonInfo.slug}`,
+            version: '1.2.0',
+            name: isCombined
+                ? 'Formatter (All)'
+                : `Formatter ${addonInfo.name}`,
+            description: isCombined
+                ? `Streams combinés de ${ADDONS.map(a => a.name).join(', ')}`
+                : `Streams ${addonInfo.name} reformatés`,
+            logo: 'https://i.imgur.com/qlfRzoT.png',
+            catalogs: [],
+            resources: ['stream'],
+            types: ['movie', 'series'],
+            idPrefixes: ['tt']
+        };
+
+        const builder = new addonBuilder(manifest);
+
+        builder.defineStreamHandler(async ({ type, id }) => {
+            console.log(`[Formatter${isCombined ? '' : '/' + addonInfo.slug}] Stream: ${type} ${id}`);
+
+            let streams = [];
+
+            if (isCombined) {
+                const promises = ADDONS.map(addon => fetchStreamsFromAddon(addon, type, id));
+                const results = await Promise.all(promises);
+                streams = results.flat();
+            } else {
+                streams = await fetchStreamsFromAddon(addonInfo, type, id);
+            }
+
+            streams = sortStreams(streams);
+            console.log(`[Formatter] ${streams.length} streams`);
+
+            return { streams };
+        });
+
+        return { builder, manifest };
     }
 
     // Charge les addons
@@ -394,49 +424,44 @@ function createAddon(config = {}) {
         return null;
     }
 
-    // Manifest
-    const manifest = {
-        id: 'community.stream.formatter',
-        version: '1.1.0',
-        name: 'Stream Formatter',
-        description: 'Agrège et reformatte les streams (style AIOStreams)',
-        logo: 'https://i.imgur.com/qlfRzoT.png',
-        catalogs: [],
-        resources: ['stream'],
-        types: ['movie', 'series'],
-        idPrefixes: ['tt']
-    };
+    // Crée le builder combiné (principal)
+    const { builder: mainBuilder, manifest: mainManifest } = createBuilder(null, true);
 
-    const builder = new addonBuilder(manifest);
-
-    // Stream handler
-    builder.defineStreamHandler(async ({ type, id }) => {
-        console.log(`[Formatter] Stream: ${type} ${id}`);
-
-        const promises = ADDONS.map(addon => fetchStreamsFromAddon(addon, type, id));
-        const results = await Promise.all(promises);
-        let allStreams = sortStreams(results.flat());
-
-        console.log(`[Formatter] ${allStreams.length} streams combinés`);
-        return { streams: allStreams };
+    // Crée les builders individuels
+    const subAddons = ADDONS.map(addon => {
+        const { builder, manifest } = createBuilder(addon, false);
+        return { addon, builder, manifest };
     });
 
     /**
      * Configure les routes Express
      */
     function setupRoutes(router) {
+        // Route stats
         router.get('/stats', (req, res) => {
             res.json({
-                addons: ADDONS.map(a => ({ name: a.name, service: a.service.shortName })),
+                addons: ADDONS.map(a => ({
+                    name: a.name,
+                    slug: a.slug,
+                    service: a.service.shortName,
+                    manifest: `/${a.slug}/manifest.json`
+                })),
                 count: ADDONS.length
             });
+        });
+
+        // Routes pour chaque addon individuel
+        subAddons.forEach(({ addon, builder }) => {
+            console.log(`[Formatter] Route: /${addon.slug}/manifest.json`);
+            router.use(`/${addon.slug}`, getRouter(builder.getInterface()));
         });
     }
 
     return {
-        builder,
-        manifest,
+        builder: mainBuilder,
+        manifest: mainManifest,
         setupRoutes,
+        subAddons,
         name: 'formatter'
     };
 }
