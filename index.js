@@ -2,12 +2,14 @@
  * Stremio Addon Loostick - Mono-repo
  *
  * Serveur unique qui combine plusieurs addons Stremio:
- * - /subtitles  : Sous-titres FR (OpenSubtitles + SubDL)
- * - /cataloog   : Catalogue TMDB enrichi
- * - /francetv   : Replay France Télévisions
- * - /arte       : Streaming Arte.tv
+ * - /subtitles   : Sous-titres FR (OpenSubtitles + SubDL)
+ * - /cataloog    : Catalogue TMDB enrichi
+ * - /cataloog-bp : Catalogue TMDB personnalisé (Asie, Classiques, Thrillers)
+ * - /francetv    : Replay France Télévisions
+ * - /arte        : Streaming Arte.tv
+ * - /formatter   : Agrégateur de streams reformatés
  *
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 require('dotenv').config();
@@ -22,8 +24,10 @@ const ADDON_URL = process.env.ADDON_URL || `http://localhost:${PORT}`;
 // Import des créateurs d'addons
 const createSubtitlesAddon = require('./addons/subtitles/addon');
 const createCataloogAddon = require('./addons/cataloog/addon');
+const createCataloogBpAddon = require('./addons/cataloog-bp/addon');
 const createFrancetvAddon = require('./addons/francetv/addon');
 const createArteAddon = require('./addons/arte/addon');
+const createFormatterAddon = require('./addons/formatter/addon');
 
 // Serveur Express principal
 const app = express();
@@ -93,8 +97,10 @@ console.log('\n[Main] Initialisation des addons...\n');
 
 mountAddon('/subtitles', createSubtitlesAddon);
 mountAddon('/cataloog', createCataloogAddon);
+mountAddon('/cataloog-bp', createCataloogBpAddon);
 mountAddon('/francetv', createFrancetvAddon);
 mountAddon('/arte', createArteAddon);
+mountAddon('/formatter', createFormatterAddon);
 
 // Route racine - liste des addons
 app.get('/', (req, res) => {
