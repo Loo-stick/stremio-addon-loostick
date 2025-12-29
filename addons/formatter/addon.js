@@ -357,16 +357,12 @@ function createAddon(config = {}) {
             descParts.push(`🔉 ${info.audio}`);
         }
 
-        const formattedDescription = descParts.join('\n');
-
-        // On supprime title et description originaux pour éviter les conflits
-        const { title: _, description: __, ...cleanStream } = stream;
+        const formattedTitle = descParts.join('\n');
 
         return {
-            ...cleanStream,
+            ...stream,
             name: formattedName,
-            title: formattedDescription,
-            description: formattedDescription,
+            title: formattedTitle,
             behaviorHints: stream.behaviorHints || {}
         };
     }
@@ -428,7 +424,7 @@ function createAddon(config = {}) {
             id: isCombined
                 ? 'community.stream.formatter'
                 : `community.stream.formatter.${addonInfo.slug}`,
-            version: '1.5.0',
+            version: '1.4.0',
             name: isCombined
                 ? 'Formatter (All)'
                 : `Formatter ${addonInfo.name}`,
