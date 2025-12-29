@@ -112,6 +112,8 @@ function createAddon(config = {}) {
             indexer: '',
             languages: [],
             cached: false,
+            yourMedia: false,  // Torbox: déjà dans le cloud
+            instant: false,    // Torbox: caché/instantané
             raw: title
         };
 
@@ -123,6 +125,17 @@ function createAddon(config = {}) {
         // Cached (⚡ ou + dans le nom)
         if (fullText.includes('⚡') || fullText.includes('[+]') || fullText.includes('(+)')) {
             info.cached = true;
+        }
+
+        // Torbox: YOUR MEDIA (déjà dans ton cloud)
+        if (upperText.includes('YOUR MEDIA') || fullText.includes('📂')) {
+            info.yourMedia = true;
+        }
+
+        // Torbox: INSTANT (caché sur serveurs Torbox)
+        if (upperText.includes('INSTANT') || upperText.includes('⚡INSTANT')) {
+            info.instant = true;
+            info.cached = true; // INSTANT implique cached
         }
 
         // Qualité
@@ -260,18 +273,44 @@ function createAddon(config = {}) {
     }
 
     /**
+     * Détecte le service debrid depuis le contenu du stream
+     */
+    function detectServiceFromStream(stream) {
+        const fullText = `${stream.name || ''} ${stream.title || ''}`.toUpperCase();
+
+        // Patterns de détection dans le contenu du stream
+        if (fullText.includes('[TB') || fullText.includes('TORBOX') || fullText.includes('TB⚡') || fullText.includes('TB]')) {
+            return { name: 'TorBox', shortName: 'TB', type: 'debrid' };
+        } else if (fullText.includes('[RD') || fullText.includes('REALDEBRID') || fullText.includes('RD⚡') || fullText.includes('RD]')) {
+            return { name: 'RealDebrid', shortName: 'RD', type: 'debrid' };
+        } else if (fullText.includes('[AD') || fullText.includes('ALLDEBRID') || fullText.includes('AD⚡') || fullText.includes('AD]')) {
+            return { name: 'AllDebrid', shortName: 'AD', type: 'debrid' };
+        } else if (fullText.includes('[PM') || fullText.includes('PREMIUMIZE') || fullText.includes('PM⚡') || fullText.includes('PM]')) {
+            return { name: 'Premiumize', shortName: 'PM', type: 'debrid' };
+        } else if (fullText.includes('[DL') || fullText.includes('DEBRIDLINK') || fullText.includes('DL⚡') || fullText.includes('DL]')) {
+            return { name: 'DebridLink', shortName: 'DL', type: 'debrid' };
+        }
+
+        return null; // Pas détecté dans le stream
+    }
+
+    /**
      * Formate un stream selon le template AIOStreams
      */
     function formatStream(stream, addonName, service) {
         const info = parseStreamTitle(stream.title, stream.name);
 
-        const isDebrid = service.type === 'debrid';
+        // Priorité: détection depuis le stream > détection depuis l'URL
+        const detectedService = detectServiceFromStream(stream);
+        const finalService = detectedService || service;
+
+        const isDebrid = finalService.type === 'debrid';
         const isCached = info.cached || stream.name?.includes('⚡') || stream.name?.includes('[+]');
 
         // NAME
         let nameParts = [];
         nameParts.push(`🔍${addonName}`);
-        nameParts.push(`${service.shortName}${isCached ? '⚡' : ''}`);
+        nameParts.push(`${finalService.shortName}${isCached ? '⚡' : ''}`);
         if (isDebrid) {
             nameParts.push('🧲 DB');
         } else {
@@ -281,6 +320,13 @@ function createAddon(config = {}) {
 
         // DESCRIPTION
         let descParts = [];
+
+        // Torbox status (YOUR MEDIA / INSTANT)
+        if (info.yourMedia) {
+            descParts.push('📂 YOUR MEDIA');
+        } else if (info.instant) {
+            descParts.push('⚡ INSTANT');
+        }
 
         const qualityParts = [info.quality, info.resolution, info.type, info.hdr].filter(Boolean);
         if (qualityParts.length > 0) {
@@ -378,7 +424,7 @@ function createAddon(config = {}) {
             id: isCombined
                 ? 'community.stream.formatter'
                 : `community.stream.formatter.${addonInfo.slug}`,
-            version: '1.2.0',
+            version: '1.4.0',
             name: isCombined
                 ? 'Formatter (All)'
                 : `Formatter ${addonInfo.name}`,
