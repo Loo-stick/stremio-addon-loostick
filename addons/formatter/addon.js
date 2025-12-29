@@ -205,8 +205,8 @@ function createAddon(config = {}) {
             info.size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
         }
 
-        // Seeders (👤 123 ou Seeds: 123)
-        const seedersMatch = fullText.match(/👤\s*(\d+)|seeds?:?\s*(\d+)/i);
+        // Seeders (👤 123, 👥 123 ou Seeds: 123)
+        const seedersMatch = fullText.match(/[👤👥]\s*(\d+)|seeds?:?\s*(\d+)/i);
         if (seedersMatch) {
             info.seeders = seedersMatch[1] || seedersMatch[2];
         }
@@ -424,7 +424,7 @@ function createAddon(config = {}) {
             id: isCombined
                 ? 'community.stream.formatter'
                 : `community.stream.formatter.${addonInfo.slug}`,
-            version: '1.4.0',
+            version: '1.4.1',
             name: isCombined
                 ? 'Formatter (All)'
                 : `Formatter ${addonInfo.name}`,
