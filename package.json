@@ -1,0 +1,30 @@
+{
+  "name": "stremio-addon-loostick",
+  "version": "1.0.0",
+  "description": "Mono-repo Stremio addons - Subtitles FR, Cataloog, France.tv, Arte.tv",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "stremio",
+    "addon",
+    "subtitles",
+    "francetv",
+    "arte",
+    "tmdb",
+    "streaming"
+  ],
+  "author": "Loostick",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "stremio-addon-sdk": "^1.6.10"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
