@@ -69,7 +69,7 @@ function createAddon(config = {}) {
                 posterShape: 'square',
                 background: channel.logo || manifest.logo,
                 logo: channel.logo || manifest.logo,
-                description: `Chaîne: ${channel.name}${channel.group ? ` | Groupe: ${channel.group}` : ''}`
+                description: channel.group ? `📺 ${channel.group}` : '📺 TV en direct'
             }));
 
             // Filtrage par recherche
@@ -121,7 +121,7 @@ function createAddon(config = {}) {
                     posterShape: 'square',
                     background: channel.logo || manifest.logo,
                     logo: channel.logo || manifest.logo,
-                    description: `Chaîne: ${channel.name}${channel.group ? ` | Groupe: ${channel.group}` : ''}`
+                    description: channel.group ? `📺 ${channel.group}` : '📺 TV en direct'
                 }
             };
 

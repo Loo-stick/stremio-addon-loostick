@@ -30,10 +30,10 @@ function parseM3U(content) {
         if (line.startsWith('#EXTINF:')) {
             currentChannel = {};
 
-            // Extraire le nom (après la dernière virgule)
-            const nameMatch = line.match(/,(.+)$/);
-            if (nameMatch) {
-                currentChannel.name = nameMatch[1].trim();
+            // Extraire tvg-name (nom propre de la chaîne)
+            const tvgNameMatch = line.match(/tvg-name="([^"]*)"/);
+            if (tvgNameMatch) {
+                currentChannel.tvgName = tvgNameMatch[1];
             }
 
             // Extraire l'ID tvg-id
@@ -53,6 +53,15 @@ function parseM3U(content) {
             if (groupMatch) {
                 currentChannel.group = groupMatch[1];
             }
+
+            // Extraire le nom après la DERNIÈRE virgule (fallback)
+            const lastCommaIndex = line.lastIndexOf(',');
+            if (lastCommaIndex !== -1) {
+                currentChannel.displayName = line.substring(lastCommaIndex + 1).trim();
+            }
+
+            // Utiliser tvg-name en priorité, sinon displayName
+            currentChannel.name = currentChannel.tvgName || currentChannel.displayName || 'Chaîne inconnue';
 
         } else if (line && !line.startsWith('#') && currentChannel) {
             // C'est l'URL du stream
