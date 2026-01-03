@@ -8,8 +8,9 @@
  * - /francetv    : Replay France Télévisions
  * - /arte        : Streaming Arte.tv
  * - /formatter   : Agrégateur de streams reformatés
+ * - /tvloo       : Chaînes sportives françaises (M3U)
  *
- * @version 1.1.0
+ * @version 1.2.0
  */
 
 require('dotenv').config();
@@ -28,6 +29,7 @@ const createCataloogBpAddon = require('./addons/cataloog-bp/addon');
 const createFrancetvAddon = require('./addons/francetv/addon');
 const createArteAddon = require('./addons/arte/addon');
 const createFormatterAddon = require('./addons/formatter/addon');
+const createTvlooAddon = require('./addons/tvloo/addon');
 
 // Serveur Express principal
 const app = express();
@@ -101,6 +103,7 @@ mountAddon('/cataloog-bp', createCataloogBpAddon);
 mountAddon('/francetv', createFrancetvAddon);
 mountAddon('/arte', createArteAddon);
 mountAddon('/formatter', createFormatterAddon);
+mountAddon('/tvloo', createTvlooAddon);
 
 // Route racine - liste des addons
 app.get('/', (req, res) => {
