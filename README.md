@@ -1,28 +1,55 @@
 # Stremio Addon Loostick
 
-Mono-repo qui combine plusieurs addons Stremio en un seul service pour optimiser les ressources.
+Mono-repo combinant plusieurs addons Stremio en un seul service pour optimiser les ressources.
 
-## Addons inclus
+## Avertissement / Disclaimer
+
+**CE LOGICIEL EST FOURNI "TEL QUEL", SANS GARANTIE D'AUCUNE SORTE, EXPRESSE OU IMPLICITE.**
+
+Ce projet est créé **strictement à des fins éducatives et personnelles uniquement**. Les développeurs :
+
+- **NE** fournissent, hébergent ou distribuent **AUCUN** contenu média
+- **NE** contrôlent ou n'exploitent **AUCUNE** source de streaming
+- **NE SONT PAS** responsables du contenu accessible via ce logiciel
+- **N'encouragent PAS** et ne cautionnent pas le piratage ou la violation du droit d'auteur
+
+**L'utilisation de ce logiciel est entièrement à vos propres risques.** Les utilisateurs sont seuls responsables de :
+
+- La légalité du contenu auquel ils accèdent
+- La conformité avec les lois et réglementations locales
+- La configuration et l'utilisation des clés API ou services externes
+
+**En utilisant ce logiciel, vous acceptez de ne l'utiliser que pour accéder à du contenu que vous avez légalement le droit de visionner.**
+
+---
+
+## Addons Inclus
 
 | Addon | Chemin | Description |
 |-------|--------|-------------|
 | **Subtitles FR** | `/subtitles` | Sous-titres français (OpenSubtitles + SubDL) |
-| **Cataloog** | `/cataloog` | Catalogue TMDB enrichi (tendances, genres, plateformes) |
+| **Cataloog** | `/cataloog` | Catalogue TMDB (tendances, genres, plateformes) |
+| **Cataloog BP** | `/cataloog-bp` | Catalogue TMDB (Asie, Classiques, Thrillers) |
 | **France.tv** | `/francetv` | Replay gratuit France Télévisions |
 | **Arte.tv** | `/arte` | Streaming légal Arte.tv |
+| **Formatter** | `/formatter` | Agrégateur et formateur de streams |
+| **TVLoo** | `/tvloo` | Lecteur IPTV M3U avec EPG |
 
-## Installation dans Stremio
+## Prérequis
 
-Chaque addon a son propre manifest :
+- Node.js 14+
+- npm
 
+## Installation
+
+```bash
+git clone https://github.com/Loo-stick/stremio-addon-loostick.git
+cd stremio-addon-loostick
+npm install
+cp .env.example .env
+# Éditez .env avec votre configuration
+npm start
 ```
-https://ton-addon.onrender.com/subtitles/manifest.json
-https://ton-addon.onrender.com/cataloog/manifest.json
-https://ton-addon.onrender.com/francetv/manifest.json
-https://ton-addon.onrender.com/arte/manifest.json
-```
-
-Ou visite la page d'accueil pour les liens d'installation.
 
 ## Configuration
 
@@ -31,17 +58,26 @@ Ou visite la page d'accueil pour les liens d'installation.
 ```env
 # Serveur
 PORT=7000
-ADDON_URL=https://ton-addon.onrender.com
+ADDON_URL=https://votre-addon-url.com
 
-# Subtitles FR
-OPENSUBTITLES_API_KEY=xxx
-SUBDL_API_KEY=xxx
+# Subtitles FR (optionnel)
+OPENSUBTITLES_API_KEY=
+SUBDL_API_KEY=
 
-# Cataloog
-TMDB_API_KEY=xxx
+# Cataloog / Cataloog BP (requis pour ces addons)
+TMDB_API_KEY=
+
+# Formatter (optionnel)
+TORBOX_API_KEY=
+FORMATTER_ADDON_1=
+FORMATTER_ADDON_2=
+
+# TVLoo (requis pour cet addon)
+TVLOO_M3U_URL=
+TVLOO_EPG_URL=
 ```
 
-### APIs requises
+### Clés API
 
 | Addon | API | Lien |
 |-------|-----|------|
@@ -50,37 +86,18 @@ TMDB_API_KEY=xxx
 | Cataloog | TMDB | https://www.themoviedb.org/settings/api |
 | France.tv | - | API publique |
 | Arte.tv | - | API publique |
-
-## Lancer en local
-
-```bash
-npm install
-cp .env.example .env
-# Édite .env avec tes API keys
-npm start
-```
-
-Le serveur démarre sur `http://localhost:7000`
+| Formatter | TorBox | https://torbox.app |
+| TVLoo | - | M3U fourni par l'utilisateur |
 
 ## Déployer sur Render
 
 1. Fork ce repo sur GitHub
-2. Crée un nouveau Web Service sur Render
-3. Connecte ton repo GitHub
-4. Configure les variables d'environnement :
-   - `ADDON_URL` = URL de ton service Render
-   - `OPENSUBTITLES_API_KEY` (optionnel)
-   - `SUBDL_API_KEY` (optionnel)
-   - `TMDB_API_KEY` (requis pour Cataloog)
-5. Deploy !
+2. Créez un nouveau Web Service sur [Render](https://render.com)
+3. Connectez votre repo GitHub
+4. Configurez les variables d'environnement
+5. Déployez !
 
-## Avantage du mono-repo
-
-**Avant** : 4 services × 24h × 31j = 2976h/mois (dépasse le free tier)
-
-**Après** : 1 service × 24h × 31j = 744h/mois ✅ (dans le free tier)
-
-## Structure
+## Structure du Projet
 
 ```
 stremio-addon-loostick/
@@ -88,28 +105,36 @@ stremio-addon-loostick/
 ├── package.json
 ├── .env.example
 └── addons/
-    ├── subtitles/        # Subtitles FR
-    │   ├── addon.js
-    │   └── lib/
-    ├── cataloog/         # Cataloog TMDB
-    │   ├── addon.js
-    │   └── lib/
-    ├── francetv/         # France.tv
-    │   ├── addon.js
-    │   └── lib/
-    └── arte/             # Arte.tv
-        ├── addon.js
-        └── lib/
+    ├── subtitles/        # Sous-titres français
+    ├── cataloog/         # Catalogue TMDB
+    ├── cataloog-bp/      # Catalogue TMDB (BP)
+    ├── francetv/         # Replay France.tv
+    ├── arte/             # Arte.tv
+    ├── formatter/        # Formateur de streams
+    └── tvloo/            # Lecteur IPTV M3U
 ```
 
 ## Endpoints
 
-- `/` - Dashboard avec liens d'installation
-- `/health` - État du serveur
-- `/api/addons` - Liste des addons actifs (JSON)
-- `/{addon}/manifest.json` - Manifest Stremio
-- `/{addon}/stats` - Stats de l'addon
+| Endpoint | Description |
+|----------|-------------|
+| `/` | Dashboard avec liens d'installation |
+| `/health` | État du serveur |
+| `/api/addons` | Liste des addons actifs (JSON) |
+| `/{addon}/manifest.json` | Manifest Stremio |
 
-## Changelog
+## Avantage du Mono-repo
 
-- **v1.0.0** : Consolidation des 4 addons en mono-repo
+**Avant** : 7 services × 24h × 31j = 5208h/mois (dépasse le free tier)
+
+**Après** : 1 service × 24h × 31j = 744h/mois ✅ (dans le free tier)
+
+## Licence
+
+Licence MIT
+
+## Mentions Légales
+
+Ce projet est fourni à des fins éducatives uniquement. Les développeurs n'assument aucune responsabilité quant à l'utilisation de ce logiciel. Les utilisateurs doivent s'assurer de respecter toutes les lois applicables dans leur juridiction.
+
+**Aucun contenu média n'est fourni, hébergé ou distribué par ce logiciel.**
