@@ -1,7 +1,8 @@
 /**
  * TVLoo Addon (adapté pour mono-repo)
  *
- * Chaînes sportives françaises en streaming via M3U
+ * Addon IPTV générique avec support multi-sources M3U
+ * Chaque source M3U = un catalogue séparé
  */
 
 const { addonBuilder } = require('stremio-addon-sdk');
@@ -9,53 +10,109 @@ const { fetchChannels, clearCache, getCacheStats } = require('./lib/m3uParser');
 const { fetchEpg, getCurrentProgram, getNextProgram, formatTime, clearEpgCache, getEpgCacheStats } = require('./lib/epgParser');
 
 /**
+ * Détecte les sources M3U configurées dans les variables d'environnement
+ * Format: TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, etc.
+ * Noms: TVLOO_CATALOG_NAME_1, TVLOO_CATALOG_NAME_2, etc.
+ * @returns {Array} Liste des sources { index, url, name }
+ */
+function detectSources() {
+    const sources = [];
+
+    // Chercher TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, etc.
+    for (let i = 1; i <= 20; i++) {
+        const url = process.env[`TVLOO_M3U_URL_${i}`];
+        if (url) {
+            const name = process.env[`TVLOO_CATALOG_NAME_${i}`] || `TV Channels ${i}`;
+            sources.push({
+                index: i - 1, // Index 0-based pour le cache
+                number: i,    // Numéro 1-based pour l'affichage
+                url,
+                name
+            });
+        }
+    }
+
+    return sources;
+}
+
+/**
  * Crée et configure l'addon TVLoo
  * @param {Object} config - Configuration
  * @returns {Object|null} { builder, setupRoutes, manifest, name } ou null si non configuré
  */
 function createAddon(config = {}) {
-    const m3uUrl = process.env.TVLOO_M3U_URL;
+    const sources = detectSources();
     const epgUrl = process.env.TVLOO_EPG_URL;
 
-    if (!m3uUrl) {
-        console.log('[TVLoo] TVLOO_M3U_URL non définie - addon désactivé');
+    if (sources.length === 0) {
+        console.log('[TVLoo] Aucune source M3U configurée (TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, ...)');
         return null;
     }
 
-    const ID_PREFIX = 'tvloo-';
-
     console.log('[TVLoo] Initialisation...');
-    console.log(`[TVLoo] Source M3U: ${m3uUrl}`);
+    console.log(`[TVLoo] ${sources.length} source(s) M3U détectée(s):`);
+    sources.forEach(s => console.log(`  - Source ${s.number}: "${s.name}"`));
+
     if (epgUrl) {
-        console.log(`[TVLoo] Source EPG: ${epgUrl}`);
-    } else {
-        console.log('[TVLoo] EPG non configuré (TVLOO_EPG_URL)');
+        console.log('[TVLoo] EPG configuré');
     }
+
+    // Générer les catalogues dynamiquement
+    const catalogs = sources.map(source => ({
+        type: 'tv',
+        id: `tvloo-catalog-${source.number}`,
+        name: source.name,
+        extra: [
+            { name: 'search', isRequired: false },
+            { name: 'skip', isRequired: false }
+        ]
+    }));
+
+    // Générer les préfixes d'ID (tvloo-1-, tvloo-2-, etc.)
+    const idPrefixes = sources.map(s => `tvloo-${s.number}-`);
 
     // Manifest Stremio
     const manifest = {
-        id: 'com.tvloo.sportsfrancefhd',
-        version: '1.0.0',
-        name: 'TV Sports France FHD',
-        description: 'Chaînes sportives françaises en streaming FHD',
-        logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Flag_of_France.svg/200px-Flag_of_France.svg.png',
+        id: 'com.tvloo.iptv',
+        version: '2.0.0',
+        name: 'TVLoo',
+        description: 'Addon IPTV - Lecture de playlists M3U avec support EPG',
+        logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/TV_icon_2.svg/200px-TV_icon_2.svg.png',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
-        catalogs: [
-            {
-                type: 'tv',
-                id: 'tvloo-sports-france',
-                name: 'Sports France FHD',
-                extra: [
-                    { name: 'search', isRequired: false },
-                    { name: 'skip', isRequired: false }
-                ]
-            }
-        ],
-        idPrefixes: [ID_PREFIX]
+        catalogs,
+        idPrefixes
     };
 
     const builder = new addonBuilder(manifest);
+
+    /**
+     * Trouve la source correspondant à un ID de chaîne
+     * @param {string} channelId - ID de la chaîne (ex: tvloo-1-xxx)
+     * @returns {Object|null} Source correspondante
+     */
+    function findSourceByChannelId(channelId) {
+        const match = channelId.match(/^tvloo-(\d+)-/);
+        if (match) {
+            const sourceNumber = parseInt(match[1]);
+            return sources.find(s => s.number === sourceNumber);
+        }
+        return null;
+    }
+
+    /**
+     * Trouve la source correspondant à un ID de catalogue
+     * @param {string} catalogId - ID du catalogue (ex: tvloo-catalog-1)
+     * @returns {Object|null} Source correspondante
+     */
+    function findSourceByCatalogId(catalogId) {
+        const match = catalogId.match(/^tvloo-catalog-(\d+)$/);
+        if (match) {
+            const sourceNumber = parseInt(match[1]);
+            return sources.find(s => s.number === sourceNumber);
+        }
+        return null;
+    }
 
     /**
      * Construit la description avec le programme en cours
@@ -88,16 +145,21 @@ function createAddon(config = {}) {
 
     // Catalog handler
     builder.defineCatalogHandler(async ({ type, id, extra }) => {
-        console.log(`[TVLoo] Catalogue: type=${type}, id=${id}`);
-
-        if (type !== 'tv' || id !== 'tvloo-sports-france') {
+        if (type !== 'tv') {
             return { metas: [] };
         }
+
+        const source = findSourceByCatalogId(id);
+        if (!source) {
+            return { metas: [] };
+        }
+
+        console.log(`[TVLoo] Catalogue "${source.name}" (source ${source.number})`);
 
         try {
             // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
-                fetchChannels(m3uUrl),
+                fetchChannels(source.url, source.index),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
@@ -137,16 +199,21 @@ function createAddon(config = {}) {
 
     // Meta handler
     builder.defineMetaHandler(async ({ type, id }) => {
-        console.log(`[TVLoo] Meta: type=${type}, id=${id}`);
-
-        if (type !== 'tv' || !id.startsWith(ID_PREFIX)) {
+        if (type !== 'tv') {
             return { meta: null };
         }
+
+        const source = findSourceByChannelId(id);
+        if (!source) {
+            return { meta: null };
+        }
+
+        console.log(`[TVLoo] Meta: ${id} (source ${source.number})`);
 
         try {
             // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
-                fetchChannels(m3uUrl),
+                fetchChannels(source.url, source.index),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
@@ -178,16 +245,21 @@ function createAddon(config = {}) {
 
     // Stream handler
     builder.defineStreamHandler(async ({ type, id }) => {
-        console.log(`[TVLoo] Stream: type=${type}, id=${id}`);
-
-        if (type !== 'tv' || !id.startsWith(ID_PREFIX)) {
+        if (type !== 'tv') {
             return { streams: [] };
         }
+
+        const source = findSourceByChannelId(id);
+        if (!source) {
+            return { streams: [] };
+        }
+
+        console.log(`[TVLoo] Stream: ${id} (source ${source.number})`);
 
         try {
             // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
-                fetchChannels(m3uUrl),
+                fetchChannels(source.url, source.index),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
@@ -197,8 +269,6 @@ function createAddon(config = {}) {
                 console.log(`[TVLoo] Chaîne non trouvée: ${id}`);
                 return { streams: [] };
             }
-
-            console.log(`[TVLoo] Stream trouvé: ${channel.name}`);
 
             // Construire le titre avec programme en cours
             let streamTitle = channel.name;
@@ -239,10 +309,12 @@ function createAddon(config = {}) {
         router.get('/stats', (req, res) => {
             res.json({
                 addon: 'TVLoo',
-                m3uUrl: m3uUrl,
-                epgUrl: epgUrl || null,
-                m3uCache: getCacheStats(),
-                epgCache: getEpgCacheStats()
+                sources: sources.map(s => ({
+                    number: s.number,
+                    name: s.name,
+                    cache: getCacheStats(s.index)
+                })),
+                epg: epgUrl ? getEpgCacheStats() : null
             });
         });
 
