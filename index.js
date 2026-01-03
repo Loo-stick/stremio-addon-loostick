@@ -172,21 +172,8 @@ app.get('/api/addons', (req, res) => {
 
 // Démarrage du serveur
 app.listen(PORT, () => {
-    console.log(`
-[Main] ========================================
-[Main] Stremio Addons Loostick démarré!
-[Main] Port: ${PORT}
-[Main] URL: ${ADDON_URL}
-[Main] ========================================
-
-[Main] Addons disponibles:
-${activeAddons.map(a => `[Main]   - ${a.name}: ${a.manifest}`).join('\n')}
-
-[Main] ========================================
-[Main] Dashboard: ${ADDON_URL}
-[Main] Health: ${ADDON_URL}/health
-[Main] ========================================
-`);
+    console.log(`[Main] Serveur démarré sur le port ${PORT}`);
+    console.log(`[Main] ${activeAddons.length} addon(s) actif(s): ${activeAddons.map(a => a.name).join(', ')}`);
 });
 
 // Gestion arrêt propre
