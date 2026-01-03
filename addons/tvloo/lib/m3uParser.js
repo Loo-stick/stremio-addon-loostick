@@ -7,9 +7,6 @@
 
 const fetch = require('node-fetch');
 
-// URL par défaut du fichier M3U
-const DEFAULT_M3U_URL = 'https://raw.githubusercontent.com/victore447/M3uSportsFranceAndMore/main/M3uSportsFrance.m3u';
-
 // Durée du cache (30 minutes)
 const CACHE_DURATION = 30 * 60 * 1000;
 
@@ -71,10 +68,14 @@ function parseM3U(content) {
 
 /**
  * Récupère les chaînes depuis le fichier M3U (avec cache)
- * @param {string} m3uUrl - URL du fichier M3U (optionnel)
+ * @param {string} m3uUrl - URL du fichier M3U (obligatoire)
  * @returns {Promise<Array>} Liste des chaînes
  */
-async function fetchChannels(m3uUrl = DEFAULT_M3U_URL) {
+async function fetchChannels(m3uUrl) {
+    if (!m3uUrl) {
+        console.error('[TVLoo] URL M3U non fournie');
+        return [];
+    }
     const now = Date.now();
 
     // Retourner le cache si encore valide
