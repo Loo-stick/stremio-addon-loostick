@@ -6,6 +6,7 @@
 
 const { addonBuilder } = require('stremio-addon-sdk');
 const { fetchChannels, clearCache, getCacheStats } = require('./lib/m3uParser');
+const { fetchEpg, getCurrentProgram, getNextProgram, formatTime, clearEpgCache, getEpgCacheStats } = require('./lib/epgParser');
 
 /**
  * Crée et configure l'addon TVLoo
@@ -14,6 +15,7 @@ const { fetchChannels, clearCache, getCacheStats } = require('./lib/m3uParser');
  */
 function createAddon(config = {}) {
     const m3uUrl = process.env.TVLOO_M3U_URL;
+    const epgUrl = process.env.TVLOO_EPG_URL;
 
     if (!m3uUrl) {
         console.log('[TVLoo] TVLOO_M3U_URL non définie - addon désactivé');
@@ -24,6 +26,11 @@ function createAddon(config = {}) {
 
     console.log('[TVLoo] Initialisation...');
     console.log(`[TVLoo] Source M3U: ${m3uUrl}`);
+    if (epgUrl) {
+        console.log(`[TVLoo] Source EPG: ${epgUrl}`);
+    } else {
+        console.log('[TVLoo] EPG non configuré (TVLOO_EPG_URL)');
+    }
 
     // Manifest Stremio
     const manifest = {
@@ -50,6 +57,35 @@ function createAddon(config = {}) {
 
     const builder = new addonBuilder(manifest);
 
+    /**
+     * Construit la description avec le programme en cours
+     */
+    function buildDescription(channel, epgData) {
+        const parts = [];
+
+        // Groupe/catégorie
+        if (channel.group) {
+            parts.push(`📺 ${channel.group}`);
+        }
+
+        // Programme en cours
+        if (epgData && channel.tvgId) {
+            const current = getCurrentProgram(epgData, channel.tvgId);
+            if (current) {
+                parts.push(`\n▶️ ${current.title}`);
+                parts.push(`   ${formatTime(current.start)} - ${formatTime(current.stop)}`);
+
+                // Prochain programme
+                const next = getNextProgram(epgData, channel.tvgId);
+                if (next) {
+                    parts.push(`\n⏭️ ${formatTime(next.start)} : ${next.title}`);
+                }
+            }
+        }
+
+        return parts.length > 0 ? parts.join('\n') : '📺 TV en direct';
+    }
+
     // Catalog handler
     builder.defineCatalogHandler(async ({ type, id, extra }) => {
         console.log(`[TVLoo] Catalogue: type=${type}, id=${id}`);
@@ -59,7 +95,11 @@ function createAddon(config = {}) {
         }
 
         try {
-            const channels = await fetchChannels(m3uUrl);
+            // Charger channels et EPG en parallèle
+            const [channels, epgData] = await Promise.all([
+                fetchChannels(m3uUrl),
+                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
+            ]);
 
             let metas = channels.map(channel => ({
                 id: channel.id,
@@ -69,7 +109,7 @@ function createAddon(config = {}) {
                 posterShape: 'square',
                 background: channel.logo || manifest.logo,
                 logo: channel.logo || manifest.logo,
-                description: channel.group ? `📺 ${channel.group}` : '📺 TV en direct'
+                description: buildDescription(channel, epgData)
             }));
 
             // Filtrage par recherche
@@ -104,7 +144,12 @@ function createAddon(config = {}) {
         }
 
         try {
-            const channels = await fetchChannels(m3uUrl);
+            // Charger channels et EPG en parallèle
+            const [channels, epgData] = await Promise.all([
+                fetchChannels(m3uUrl),
+                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
+            ]);
+
             const channel = channels.find(ch => ch.id === id);
 
             if (!channel) {
@@ -121,7 +166,7 @@ function createAddon(config = {}) {
                     posterShape: 'square',
                     background: channel.logo || manifest.logo,
                     logo: channel.logo || manifest.logo,
-                    description: channel.group ? `📺 ${channel.group}` : '📺 TV en direct'
+                    description: buildDescription(channel, epgData)
                 }
             };
 
@@ -140,7 +185,12 @@ function createAddon(config = {}) {
         }
 
         try {
-            const channels = await fetchChannels(m3uUrl);
+            // Charger channels et EPG en parallèle
+            const [channels, epgData] = await Promise.all([
+                fetchChannels(m3uUrl),
+                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
+            ]);
+
             const channel = channels.find(ch => ch.id === id);
 
             if (!channel) {
@@ -150,11 +200,23 @@ function createAddon(config = {}) {
 
             console.log(`[TVLoo] Stream trouvé: ${channel.name}`);
 
+            // Construire le titre avec programme en cours
+            let streamTitle = channel.name;
+            if (epgData && channel.tvgId) {
+                const current = getCurrentProgram(epgData, channel.tvgId);
+                if (current) {
+                    streamTitle += `\n▶️ ${current.title}`;
+                }
+            }
+            if (channel.group) {
+                streamTitle += `\n📺 ${channel.group}`;
+            }
+
             return {
                 streams: [
                     {
                         name: 'TVLoo',
-                        title: `${channel.name}\n${channel.group ? `📺 ${channel.group}` : '📺 Sports France'}`,
+                        title: streamTitle,
                         url: channel.url,
                         behaviorHints: {
                             notWebReady: true
@@ -175,18 +237,20 @@ function createAddon(config = {}) {
     function setupRoutes(router) {
         // Route stats
         router.get('/stats', (req, res) => {
-            const stats = getCacheStats();
             res.json({
                 addon: 'TVLoo',
                 m3uUrl: m3uUrl,
-                cache: stats
+                epgUrl: epgUrl || null,
+                m3uCache: getCacheStats(),
+                epgCache: getEpgCacheStats()
             });
         });
 
         // Route pour vider le cache
         router.post('/clear-cache', (req, res) => {
             clearCache();
-            res.json({ success: true, message: 'Cache vidé' });
+            clearEpgCache();
+            res.json({ success: true, message: 'Cache M3U et EPG vidés' });
         });
     }
 
