@@ -2,7 +2,7 @@
  * TVLoo Addon (adapté pour mono-repo)
  *
  * Addon IPTV générique avec support multi-sources M3U
- * Chaque source M3U = un catalogue séparé
+ * Sources avec même CATALOG_NAME = fusionnées en un seul catalogue
  */
 
 const { addonBuilder } = require('stremio-addon-sdk');
@@ -11,15 +11,11 @@ const { fetchEpg, getCurrentProgram, getNextProgram, formatTime, clearEpgCache, 
 
 /**
  * Détecte les sources M3U configurées dans les variables d'environnement
- * Format: TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, etc.
- * Noms: TVLOO_CATALOG_NAME_1, TVLOO_CATALOG_NAME_2, etc.
- * Filtres: TVLOO_FILTER_COUNTRY_1, TVLOO_FILTER_CATEGORY_1, TVLOO_CHAINES_1, etc.
- * @returns {Array} Liste des sources { index, url, name, filters }
+ * @returns {Array} Liste des sources
  */
 function detectSources() {
     const sources = [];
 
-    // Chercher TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, etc.
     for (let i = 1; i <= 20; i++) {
         const url = process.env[`TVLOO_M3U_URL_${i}`];
         if (url) {
@@ -28,12 +24,10 @@ function detectSources() {
             const filterCategory = process.env[`TVLOO_FILTER_CATEGORY_${i}`] || null;
             const filterChaines = process.env[`TVLOO_CHAINES_${i}`] || null;
 
-            // Parser la liste de chaînes (séparées par |)
             const channels = filterChaines
                 ? filterChaines.split('|').map(c => c.trim()).filter(c => c.length > 0)
                 : null;
 
-            // Construire l'objet filters seulement si au moins un filtre est défini
             const filters = (filterCountry || filterCategory || channels) ? {
                 country: filterCountry,
                 category: filterCategory,
@@ -41,10 +35,10 @@ function detectSources() {
             } : null;
 
             sources.push({
-                index: i - 1, // Index 0-based pour le cache
-                number: i,    // Numéro 1-based pour l'affichage
+                index: i - 1,
+                number: i,
                 url,
-                name,
+                catalogName: name,
                 filters
             });
         }
@@ -54,9 +48,36 @@ function detectSources() {
 }
 
 /**
+ * Groupe les sources par nom de catalogue
+ * @param {Array} sources - Liste des sources
+ * @returns {Map} Map catalogName -> [sources]
+ */
+function groupSourcesByCatalog(sources) {
+    const groups = new Map();
+
+    for (const source of sources) {
+        const name = source.catalogName;
+        if (!groups.has(name)) {
+            groups.set(name, []);
+        }
+        groups.get(name).push(source);
+    }
+
+    return groups;
+}
+
+/**
+ * Normalise un nom de chaîne pour comparaison
+ */
+function normalizeChannelName(name) {
+    return (name || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .replace(/^(FR|AF|AR|UK|US|DE|ES|IT|PT):?\s*/i, ''); // Enlever préfixes pays
+}
+
+/**
  * Crée et configure l'addon TVLoo
- * @param {Object} config - Configuration
- * @returns {Object|null} { builder, setupRoutes, manifest, name } ou null si non configuré
  */
 function createAddon(config = {}) {
     const sources = detectSources();
@@ -67,39 +88,56 @@ function createAddon(config = {}) {
         return null;
     }
 
+    // Grouper les sources par nom de catalogue
+    const catalogGroups = groupSourcesByCatalog(sources);
+
     console.log('[TVLoo] Initialisation...');
-    console.log(`[TVLoo] ${sources.length} source(s) M3U détectée(s):`);
-    sources.forEach(s => {
-        const filterInfo = [];
-        if (s.filters?.country) filterInfo.push(`country=${s.filters.country}`);
-        if (s.filters?.category) filterInfo.push(`category=${s.filters.category}`);
-        if (s.filters?.channels?.length) filterInfo.push(`${s.filters.channels.length} chaînes`);
-        const filterStr = filterInfo.length > 0 ? ` [${filterInfo.join(', ')}]` : '';
-        console.log(`  - Source ${s.number}: "${s.name}"${filterStr}`);
-    });
+    console.log(`[TVLoo] ${sources.length} source(s) M3U → ${catalogGroups.size} catalogue(s):`);
+
+    for (const [catalogName, groupSources] of catalogGroups) {
+        if (groupSources.length === 1) {
+            const s = groupSources[0];
+            const filterInfo = [];
+            if (s.filters?.country) filterInfo.push(`country=${s.filters.country}`);
+            if (s.filters?.category) filterInfo.push(`category=${s.filters.category}`);
+            if (s.filters?.channels?.length) filterInfo.push(`${s.filters.channels.length} chaînes`);
+            const filterStr = filterInfo.length > 0 ? ` [${filterInfo.join(', ')}]` : '';
+            console.log(`  - "${catalogName}" (source ${s.number})${filterStr}`);
+        } else {
+            console.log(`  - "${catalogName}" (${groupSources.length} sources fusionnées: ${groupSources.map(s => s.number).join(', ')})`);
+        }
+    }
 
     if (epgUrl) {
         console.log('[TVLoo] EPG configuré');
     }
 
-    // Générer les catalogues dynamiquement
-    const catalogs = sources.map(source => ({
-        type: 'tv',
-        id: `tvloo-catalog-${source.number}`,
-        name: source.name,
-        extra: [
-            { name: 'search', isRequired: false },
-            { name: 'skip', isRequired: false }
-        ]
-    }));
+    // Générer les catalogues (un par groupe)
+    const catalogs = [];
+    let catalogIndex = 0;
+    const catalogIdToGroup = new Map();
 
-    // Générer les préfixes d'ID (tvloo-1-, tvloo-2-, etc.)
+    for (const [catalogName, groupSources] of catalogGroups) {
+        const catalogId = `tvloo-catalog-${catalogIndex}`;
+        catalogs.push({
+            type: 'tv',
+            id: catalogId,
+            name: catalogName,
+            extra: [
+                { name: 'search', isRequired: false },
+                { name: 'skip', isRequired: false }
+            ]
+        });
+        catalogIdToGroup.set(catalogId, { name: catalogName, sources: groupSources });
+        catalogIndex++;
+    }
+
+    // Générer les préfixes d'ID
     const idPrefixes = sources.map(s => `tvloo-${s.number}-`);
 
-    // Manifest Stremio
     const manifest = {
         id: 'com.tvloo.iptv',
-        version: '2.0.0',
+        version: '2.1.0',
         name: 'TVLoo',
         description: 'Addon IPTV - Lecture de playlists M3U avec support EPG',
         logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/TV_icon_2.svg/200px-TV_icon_2.svg.png',
@@ -112,9 +150,7 @@ function createAddon(config = {}) {
     const builder = new addonBuilder(manifest);
 
     /**
-     * Trouve la source correspondant à un ID de chaîne
-     * @param {string} channelId - ID de la chaîne (ex: tvloo-1-xxx)
-     * @returns {Object|null} Source correspondante
+     * Trouve la source par ID de chaîne
      */
     function findSourceByChannelId(channelId) {
         const match = channelId.match(/^tvloo-(\d+)-/);
@@ -126,17 +162,10 @@ function createAddon(config = {}) {
     }
 
     /**
-     * Trouve la source correspondant à un ID de catalogue
-     * @param {string} catalogId - ID du catalogue (ex: tvloo-catalog-1)
-     * @returns {Object|null} Source correspondante
+     * Trouve toutes les sources du même catalogue
      */
-    function findSourceByCatalogId(catalogId) {
-        const match = catalogId.match(/^tvloo-catalog-(\d+)$/);
-        if (match) {
-            const sourceNumber = parseInt(match[1]);
-            return sources.find(s => s.number === sourceNumber);
-        }
-        return null;
+    function findSiblingsSources(source) {
+        return sources.filter(s => s.catalogName === source.catalogName);
     }
 
     /**
@@ -145,19 +174,16 @@ function createAddon(config = {}) {
     function buildDescription(channel, epgData) {
         const parts = [];
 
-        // Groupe/catégorie
         if (channel.group) {
             parts.push(`📺 ${channel.group}`);
         }
 
-        // Programme en cours
         if (epgData && channel.tvgId) {
             const current = getCurrentProgram(epgData, channel.tvgId);
             if (current) {
                 parts.push(`\n▶️ ${current.title}`);
                 parts.push(`   ${formatTime(current.start)} - ${formatTime(current.stop)}`);
 
-                // Prochain programme
                 const next = getNextProgram(epgData, channel.tvgId);
                 if (next) {
                     parts.push(`\n⏭️ ${formatTime(next.start)} : ${next.title}`);
@@ -168,27 +194,45 @@ function createAddon(config = {}) {
         return parts.length > 0 ? parts.join('\n') : '📺 TV en direct';
     }
 
-    // Catalog handler
+    // Catalog handler - fusionne les sources du même catalogue
     builder.defineCatalogHandler(async ({ type, id, extra }) => {
         if (type !== 'tv') {
             return { metas: [] };
         }
 
-        const source = findSourceByCatalogId(id);
-        if (!source) {
+        const group = catalogIdToGroup.get(id);
+        if (!group) {
             return { metas: [] };
         }
 
-        console.log(`[TVLoo] Catalogue "${source.name}" (source ${source.number})`);
+        console.log(`[TVLoo] Catalogue "${group.name}" (${group.sources.length} source(s))`);
 
         try {
-            // Charger channels et EPG en parallèle
-            const [channels, epgData] = await Promise.all([
-                fetchChannels(source.url, source.index, source.filters),
-                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
+            // Charger toutes les sources du groupe + EPG en parallèle
+            const channelsPromises = group.sources.map(s =>
+                fetchChannels(s.url, s.index, s.filters)
+            );
+
+            const [epgData, ...channelsArrays] = await Promise.all([
+                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null),
+                ...channelsPromises
             ]);
 
-            let metas = channels.map(channel => ({
+            // Fusionner les chaînes (dédupliquer par nom normalisé)
+            const seenNames = new Map(); // normalizedName -> channel
+            const mergedChannels = [];
+
+            for (const channels of channelsArrays) {
+                for (const channel of channels) {
+                    const normalized = normalizeChannelName(channel.name);
+                    if (!seenNames.has(normalized)) {
+                        seenNames.set(normalized, channel);
+                        mergedChannels.push(channel);
+                    }
+                }
+            }
+
+            let metas = mergedChannels.map(channel => ({
                 id: channel.id,
                 type: 'tv',
                 name: channel.name,
@@ -233,19 +277,14 @@ function createAddon(config = {}) {
             return { meta: null };
         }
 
-        console.log(`[TVLoo] Meta: ${id} (source ${source.number})`);
-
         try {
-            // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
                 fetchChannels(source.url, source.index, source.filters),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
             const channel = channels.find(ch => ch.id === id);
-
             if (!channel) {
-                console.log(`[TVLoo] Chaîne non trouvée: ${id}`);
                 return { meta: null };
             }
 
@@ -268,57 +307,77 @@ function createAddon(config = {}) {
         }
     });
 
-    // Stream handler
+    // Stream handler - retourne plusieurs streams si la chaîne existe dans plusieurs sources
     builder.defineStreamHandler(async ({ type, id }) => {
         if (type !== 'tv') {
             return { streams: [] };
         }
 
-        const source = findSourceByChannelId(id);
-        if (!source) {
+        const primarySource = findSourceByChannelId(id);
+        if (!primarySource) {
             return { streams: [] };
         }
 
-        console.log(`[TVLoo] Stream: ${id} (source ${source.number})`);
-
         try {
-            // Charger channels et EPG en parallèle
-            const [channels, epgData] = await Promise.all([
-                fetchChannels(source.url, source.index, source.filters),
-                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
+            // Trouver toutes les sources du même catalogue
+            const siblingsSources = findSiblingsSources(primarySource);
+
+            // Charger toutes les sources + EPG
+            const channelsPromises = siblingsSources.map(s =>
+                fetchChannels(s.url, s.index, s.filters)
+            );
+
+            const [epgData, ...channelsArrays] = await Promise.all([
+                epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null),
+                ...channelsPromises
             ]);
 
-            const channel = channels.find(ch => ch.id === id);
+            // Trouver la chaîne principale
+            const primaryIndex = siblingsSources.findIndex(s => s.number === primarySource.number);
+            const primaryChannels = channelsArrays[primaryIndex];
+            const primaryChannel = primaryChannels.find(ch => ch.id === id);
 
-            if (!channel) {
-                console.log(`[TVLoo] Chaîne non trouvée: ${id}`);
+            if (!primaryChannel) {
                 return { streams: [] };
             }
 
-            // Construire le titre avec programme en cours
-            let streamTitle = channel.name;
-            if (epgData && channel.tvgId) {
-                const current = getCurrentProgram(epgData, channel.tvgId);
-                if (current) {
-                    streamTitle += `\n▶️ ${current.title}`;
-                }
-            }
-            if (channel.group) {
-                streamTitle += `\n📺 ${channel.group}`;
-            }
+            const normalizedName = normalizeChannelName(primaryChannel.name);
+            const streams = [];
 
-            return {
-                streams: [
-                    {
-                        name: 'TVLoo',
+            // Chercher cette chaîne dans toutes les sources
+            for (let i = 0; i < siblingsSources.length; i++) {
+                const source = siblingsSources[i];
+                const channels = channelsArrays[i];
+
+                const matchingChannel = channels.find(ch =>
+                    normalizeChannelName(ch.name) === normalizedName
+                );
+
+                if (matchingChannel) {
+                    let streamTitle = matchingChannel.name;
+                    if (epgData && matchingChannel.tvgId) {
+                        const current = getCurrentProgram(epgData, matchingChannel.tvgId);
+                        if (current) {
+                            streamTitle += `\n▶️ ${current.title}`;
+                        }
+                    }
+                    if (matchingChannel.group) {
+                        streamTitle += `\n📺 ${matchingChannel.group}`;
+                    }
+
+                    streams.push({
+                        name: siblingsSources.length > 1 ? `Source ${source.number}` : 'TVLoo',
                         title: streamTitle,
-                        url: channel.url,
+                        url: matchingChannel.url,
                         behaviorHints: {
                             notWebReady: true
                         }
-                    }
-                ]
-            };
+                    });
+                }
+            }
+
+            console.log(`[TVLoo] Stream "${primaryChannel.name}": ${streams.length} source(s)`);
+            return { streams };
 
         } catch (error) {
             console.error('[TVLoo] Erreur stream:', error.message);
@@ -330,21 +389,27 @@ function createAddon(config = {}) {
      * Configure les routes Express custom
      */
     function setupRoutes(router) {
-        // Route stats
         router.get('/stats', (req, res) => {
-            res.json({
+            const stats = {
                 addon: 'TVLoo',
-                sources: sources.map(s => ({
-                    number: s.number,
-                    name: s.name,
-                    filters: s.filters || null,
-                    cache: getCacheStats(s.index)
-                })),
+                catalogs: [],
                 epg: epgUrl ? getEpgCacheStats() : null
-            });
+            };
+
+            for (const [catalogName, groupSources] of catalogGroups) {
+                stats.catalogs.push({
+                    name: catalogName,
+                    sources: groupSources.map(s => ({
+                        number: s.number,
+                        filters: s.filters || null,
+                        cache: getCacheStats(s.index)
+                    }))
+                });
+            }
+
+            res.json(stats);
         });
 
-        // Route pour vider le cache
         router.post('/clear-cache', (req, res) => {
             clearCache();
             clearEpgCache();
