@@ -13,7 +13,8 @@ const { fetchEpg, getCurrentProgram, getNextProgram, formatTime, clearEpgCache, 
  * Détecte les sources M3U configurées dans les variables d'environnement
  * Format: TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, etc.
  * Noms: TVLOO_CATALOG_NAME_1, TVLOO_CATALOG_NAME_2, etc.
- * @returns {Array} Liste des sources { index, url, name }
+ * Filtres: TVLOO_FILTER_COUNTRY_1, TVLOO_FILTER_CATEGORY_1, etc.
+ * @returns {Array} Liste des sources { index, url, name, filters }
  */
 function detectSources() {
     const sources = [];
@@ -23,11 +24,21 @@ function detectSources() {
         const url = process.env[`TVLOO_M3U_URL_${i}`];
         if (url) {
             const name = process.env[`TVLOO_CATALOG_NAME_${i}`] || `TV Channels ${i}`;
+            const filterCountry = process.env[`TVLOO_FILTER_COUNTRY_${i}`] || null;
+            const filterCategory = process.env[`TVLOO_FILTER_CATEGORY_${i}`] || null;
+
+            // Construire l'objet filters seulement si au moins un filtre est défini
+            const filters = (filterCountry || filterCategory) ? {
+                country: filterCountry,
+                category: filterCategory
+            } : null;
+
             sources.push({
                 index: i - 1, // Index 0-based pour le cache
                 number: i,    // Numéro 1-based pour l'affichage
                 url,
-                name
+                name,
+                filters
             });
         }
     }
@@ -51,7 +62,13 @@ function createAddon(config = {}) {
 
     console.log('[TVLoo] Initialisation...');
     console.log(`[TVLoo] ${sources.length} source(s) M3U détectée(s):`);
-    sources.forEach(s => console.log(`  - Source ${s.number}: "${s.name}"`));
+    sources.forEach(s => {
+        const filterInfo = [];
+        if (s.filters?.country) filterInfo.push(`country=${s.filters.country}`);
+        if (s.filters?.category) filterInfo.push(`category=${s.filters.category}`);
+        const filterStr = filterInfo.length > 0 ? ` [${filterInfo.join(', ')}]` : '';
+        console.log(`  - Source ${s.number}: "${s.name}"${filterStr}`);
+    });
 
     if (epgUrl) {
         console.log('[TVLoo] EPG configuré');
@@ -159,7 +176,7 @@ function createAddon(config = {}) {
         try {
             // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
-                fetchChannels(source.url, source.index),
+                fetchChannels(source.url, source.index, source.filters),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
@@ -213,7 +230,7 @@ function createAddon(config = {}) {
         try {
             // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
-                fetchChannels(source.url, source.index),
+                fetchChannels(source.url, source.index, source.filters),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
@@ -259,7 +276,7 @@ function createAddon(config = {}) {
         try {
             // Charger channels et EPG en parallèle
             const [channels, epgData] = await Promise.all([
-                fetchChannels(source.url, source.index),
+                fetchChannels(source.url, source.index, source.filters),
                 epgUrl ? fetchEpg(epgUrl) : Promise.resolve(null)
             ]);
 
@@ -312,6 +329,7 @@ function createAddon(config = {}) {
                 sources: sources.map(s => ({
                     number: s.number,
                     name: s.name,
+                    filters: s.filters || null,
                     cache: getCacheStats(s.index)
                 })),
                 epg: epgUrl ? getEpgCacheStats() : null
