@@ -13,7 +13,7 @@ const { fetchEpg, getCurrentProgram, getNextProgram, formatTime, clearEpgCache, 
  * Détecte les sources M3U configurées dans les variables d'environnement
  * Format: TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, etc.
  * Noms: TVLOO_CATALOG_NAME_1, TVLOO_CATALOG_NAME_2, etc.
- * Filtres: TVLOO_FILTER_COUNTRY_1, TVLOO_FILTER_CATEGORY_1, etc.
+ * Filtres: TVLOO_FILTER_COUNTRY_1, TVLOO_FILTER_CATEGORY_1, TVLOO_CHAINES_1, etc.
  * @returns {Array} Liste des sources { index, url, name, filters }
  */
 function detectSources() {
@@ -26,11 +26,18 @@ function detectSources() {
             const name = process.env[`TVLOO_CATALOG_NAME_${i}`] || `TV Channels ${i}`;
             const filterCountry = process.env[`TVLOO_FILTER_COUNTRY_${i}`] || null;
             const filterCategory = process.env[`TVLOO_FILTER_CATEGORY_${i}`] || null;
+            const filterChaines = process.env[`TVLOO_CHAINES_${i}`] || null;
+
+            // Parser la liste de chaînes (séparées par |)
+            const channels = filterChaines
+                ? filterChaines.split('|').map(c => c.trim()).filter(c => c.length > 0)
+                : null;
 
             // Construire l'objet filters seulement si au moins un filtre est défini
-            const filters = (filterCountry || filterCategory) ? {
+            const filters = (filterCountry || filterCategory || channels) ? {
                 country: filterCountry,
-                category: filterCategory
+                category: filterCategory,
+                channels: channels
             } : null;
 
             sources.push({
@@ -66,6 +73,7 @@ function createAddon(config = {}) {
         const filterInfo = [];
         if (s.filters?.country) filterInfo.push(`country=${s.filters.country}`);
         if (s.filters?.category) filterInfo.push(`category=${s.filters.category}`);
+        if (s.filters?.channels?.length) filterInfo.push(`${s.filters.channels.length} chaînes`);
         const filterStr = filterInfo.length > 0 ? ` [${filterInfo.join(', ')}]` : '';
         console.log(`  - Source ${s.number}: "${s.name}"${filterStr}`);
     });

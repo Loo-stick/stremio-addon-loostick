@@ -17,7 +17,7 @@ const cache = new Map();
  * Génère une clé de cache unique pour une source avec ses filtres
  */
 function getCacheKey(sourceIndex, filters) {
-    const filterStr = filters ? `${filters.country || ''}-${filters.category || ''}` : '';
+    const filterStr = filters ? `${filters.country || ''}-${filters.category || ''}-${(filters.channels || []).length}` : '';
     return `source-${sourceIndex}-${filterStr}`;
 }
 
@@ -44,13 +44,13 @@ function parseGroup(group) {
 /**
  * Vérifie si une chaîne correspond aux filtres
  * @param {Object} channel - La chaîne avec ses métadonnées
- * @param {Object} filters - { country, category }
+ * @param {Object} filters - { country, category, channels }
  * @returns {boolean}
  */
 function matchesFilters(channel, filters) {
     if (!filters) return true;
 
-    const { country: filterCountry, category: filterCategory } = filters;
+    const { country: filterCountry, category: filterCategory, channels: filterChannels } = filters;
     const { country: channelCountry, category: channelCategory } = parseGroup(channel.group);
 
     // Filtre par pays (insensible à la casse)
@@ -63,6 +63,19 @@ function matchesFilters(channel, filters) {
     // Filtre par catégorie (insensible à la casse, recherche partielle)
     if (filterCategory) {
         if (!channelCategory || !channelCategory.toUpperCase().includes(filterCategory.toUpperCase())) {
+            return false;
+        }
+    }
+
+    // Filtre par liste de chaînes (whitelist sur tvg-name, insensible à la casse, recherche partielle)
+    if (filterChannels && filterChannels.length > 0) {
+        const tvgName = (channel.tvgName || '').toUpperCase();
+        const displayName = (channel.displayName || '').toUpperCase();
+        const matches = filterChannels.some(fc => {
+            const filter = fc.toUpperCase();
+            return tvgName.includes(filter) || displayName.includes(filter);
+        });
+        if (!matches) {
             return false;
         }
     }
@@ -173,6 +186,7 @@ async function fetchChannels(m3uUrl, sourceIndex = 0, filters = null) {
         const filterInfo = [];
         if (filters?.country) filterInfo.push(`country=${filters.country}`);
         if (filters?.category) filterInfo.push(`category=${filters.category}`);
+        if (filters?.channels?.length) filterInfo.push(`${filters.channels.length} chaînes`);
         const filterStr = filterInfo.length > 0 ? ` (${filterInfo.join(', ')})` : '';
 
         console.log(`[TVLoo] Source ${sourceIndex + 1}: téléchargement M3U...${filterStr}`);
