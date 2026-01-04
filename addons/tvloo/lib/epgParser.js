@@ -7,6 +7,7 @@
 
 const fetch = require('node-fetch');
 const sax = require('sax');
+const zlib = require('zlib');
 
 // Durée du cache EPG (1 heure)
 const EPG_CACHE_DURATION = 60 * 60 * 1000;
@@ -235,13 +236,21 @@ async function fetchEpg(epgUrl) {
     global._epgDownloading = true;
 
     try {
-        console.log('[TVLoo EPG] Téléchargement streaming...');
+        // Vérifier si c'est un fichier compressé
+        const isGzip = epgUrl.endsWith('.gz');
+        const isXz = epgUrl.endsWith('.xz');
+
+        if (isXz) {
+            console.error('[TVLoo EPG] Format .xz non supporté, utilisez .gz ou .xml');
+            return null;
+        }
+
+        console.log(`[TVLoo EPG] Téléchargement streaming${isGzip ? ' (gzip)' : ''}...`);
 
         const response = await fetch(epgUrl, {
             timeout: 180000, // 3 minutes pour les gros fichiers
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                // Pas de Accept-Encoding pour éviter les problèmes de décompression stream
             }
         });
 
@@ -251,8 +260,14 @@ async function fetchEpg(epgUrl) {
 
         console.log('[TVLoo EPG] Réponse reçue, parsing en cours...');
 
-        // Parser en streaming
-        cachedEpg = await parseXMLTVStream(response.body);
+        // Décompresser si nécessaire puis parser
+        let stream = response.body;
+        if (isGzip) {
+            const gunzip = zlib.createGunzip();
+            stream = response.body.pipe(gunzip);
+        }
+
+        cachedEpg = await parseXMLTVStream(stream);
         epgCacheTime = Date.now();
 
         global._epgDownloading = false;
