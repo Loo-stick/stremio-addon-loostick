@@ -167,8 +167,12 @@ function parseXMLTVStream(stream) {
         parser.on('error', (err) => {
             console.error('[TVLoo EPG] Erreur parsing:', err.message);
             // Continue malgré les erreurs de parsing
-            parser._parser.error = null;
-            parser._parser.resume();
+            try {
+                parser._parser.error = null;
+                parser._parser.resume();
+            } catch (e) {
+                // Ignore
+            }
         });
 
         parser.on('end', () => {
@@ -180,6 +184,21 @@ function parseXMLTVStream(stream) {
             console.log(`[TVLoo EPG] Streaming terminé: ${keptCount}/${totalParsed} programmes gardés (${Object.keys(programs).length} chaînes)`);
             resolve(programs);
         });
+
+        // Gérer les erreurs du stream source
+        stream.on('error', (err) => {
+            console.error('[TVLoo EPG] Erreur stream:', err.message);
+            resolve(programs); // Retourner ce qu'on a parsé
+        });
+
+        // Timeout de sécurité
+        const timeout = setTimeout(() => {
+            console.log(`[TVLoo EPG] Timeout - retour avec ${keptCount} programmes`);
+            try { stream.destroy(); } catch (e) {}
+            resolve(programs);
+        }, 150000); // 2.5 minutes max
+
+        parser.on('end', () => clearTimeout(timeout));
 
         // Pipe le stream vers le parser
         stream.pipe(parser);
@@ -204,14 +223,25 @@ async function fetchEpg(epgUrl) {
         return cachedEpg;
     }
 
+    // Éviter les téléchargements parallèles
+    if (global._epgDownloading) {
+        console.log('[TVLoo EPG] Téléchargement déjà en cours, attente...');
+        // Attendre que le téléchargement en cours se termine
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        if (cachedEpg) return cachedEpg;
+        return null;
+    }
+
+    global._epgDownloading = true;
+
     try {
         console.log('[TVLoo EPG] Téléchargement streaming...');
 
         const response = await fetch(epgUrl, {
-            timeout: 120000, // 2 minutes pour les gros fichiers
+            timeout: 180000, // 3 minutes pour les gros fichiers
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept-Encoding': 'gzip, deflate'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                // Pas de Accept-Encoding pour éviter les problèmes de décompression stream
             }
         });
 
@@ -219,13 +249,17 @@ async function fetchEpg(epgUrl) {
             throw new Error(`HTTP ${response.status}`);
         }
 
+        console.log('[TVLoo EPG] Réponse reçue, parsing en cours...');
+
         // Parser en streaming
         cachedEpg = await parseXMLTVStream(response.body);
         epgCacheTime = Date.now();
 
+        global._epgDownloading = false;
         return cachedEpg;
 
     } catch (error) {
+        global._epgDownloading = false;
         console.error('[TVLoo EPG] Erreur:', error.message);
         if (cachedEpg) {
             console.log('[TVLoo EPG] Utilisation du cache expiré');
