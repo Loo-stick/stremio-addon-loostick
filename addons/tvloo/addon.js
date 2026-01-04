@@ -82,6 +82,7 @@ function normalizeChannelName(name) {
 function createAddon(config = {}) {
     const sources = detectSources();
     const epgUrl = process.env.TVLOO_EPG_URL;
+    const posterShape = process.env.TVLOO_POSTER_SHAPE || 'square'; // square, poster, landscape
 
     if (sources.length === 0) {
         console.log('[TVLoo] Aucune source M3U configurée (TVLOO_M3U_URL_1, TVLOO_M3U_URL_2, ...)');
@@ -237,7 +238,7 @@ function createAddon(config = {}) {
                 type: 'tv',
                 name: channel.name,
                 poster: channel.logo || manifest.logo,
-                posterShape: 'square',
+                posterShape: posterShape,
                 background: channel.logo || manifest.logo,
                 logo: channel.logo || manifest.logo,
                 description: buildDescription(channel, epgData)
@@ -294,7 +295,7 @@ function createAddon(config = {}) {
                     type: 'tv',
                     name: channel.name,
                     poster: channel.logo || manifest.logo,
-                    posterShape: 'square',
+                    posterShape: posterShape,
                     background: channel.logo || manifest.logo,
                     logo: channel.logo || manifest.logo,
                     description: buildDescription(channel, epgData)
