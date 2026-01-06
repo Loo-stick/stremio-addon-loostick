@@ -298,60 +298,67 @@ function createAddon(config = {}) {
     /**
      * Formate un stream selon le template AIOStreams
      * Garde la structure originale et ajoute des infos formatées
+     * En cas d'erreur, retourne le stream original (fallback)
      */
     function formatStream(stream, addonName, service) {
-        // Parse depuis description OU title OU name (Stream Fusion utilise description)
-        const sourceText = stream.description || stream.title || stream.name || '';
-        const info = parseStreamTitle(sourceText, stream.name);
+        try {
+            // Parse depuis description OU title OU name (Stream Fusion utilise description)
+            const sourceText = stream.description || stream.title || stream.name || '';
+            const info = parseStreamTitle(sourceText, stream.name);
 
-        // Priorité: détection depuis le stream > détection depuis l'URL
-        const detectedService = detectServiceFromStream(stream);
-        const finalService = detectedService || service;
+            // Priorité: détection depuis le stream > détection depuis l'URL
+            const detectedService = detectServiceFromStream(stream);
+            const finalService = detectedService || service;
 
-        const isDebrid = finalService.type === 'debrid';
-        const isCached = info.cached || info.instant || stream.name?.includes('⚡') || stream.name?.includes('[+]');
+            const isDebrid = finalService.type === 'debrid';
+            const isCached = info.cached || info.instant || stream.name?.includes('⚡') || stream.name?.includes('[+]');
 
-        // NAME - format court pour l'en-tête
-        let nameParts = [];
-        nameParts.push(`🔍${addonName}`);
-        nameParts.push(`${finalService.shortName}${isCached ? '⚡' : ''}`);
-        if (info.quality) {
-            nameParts.push(info.quality);
-        }
-        const formattedName = nameParts.join(' | ');
+            // NAME - format court pour l'en-tête
+            let nameParts = [];
+            nameParts.push(`🔍${addonName}`);
+            nameParts.push(`${finalService.shortName}${isCached ? '⚡' : ''}`);
+            if (info.quality) {
+                nameParts.push(info.quality);
+            }
+            const formattedName = nameParts.join(' | ');
 
-        // DESCRIPTION - garde l'original si présent, sinon construit
-        // Stream Fusion et d'autres addons utilisent description
-        let formattedDescription = stream.description;
+            // DESCRIPTION - garde l'original si présent, sinon construit
+            // Stream Fusion et d'autres addons utilisent description
+            let formattedDescription = stream.description;
 
-        // Si pas de description, on en construit une
-        if (!formattedDescription) {
-            let descParts = [];
+            // Si pas de description, on en construit une
+            if (!formattedDescription) {
+                let descParts = [];
 
-            if (info.yourMedia) {
-                descParts.push('📂 YOUR MEDIA');
-            } else if (info.instant) {
-                descParts.push('⚡ INSTANT');
+                if (info.yourMedia) {
+                    descParts.push('📂 YOUR MEDIA');
+                } else if (info.instant) {
+                    descParts.push('⚡ INSTANT');
+                }
+
+                const qualityParts = [info.quality, info.resolution, info.type, info.hdr].filter(Boolean);
+                if (qualityParts.length > 0) {
+                    descParts.push(`ℹ️ ${qualityParts.join(' / ')}`);
+                }
+
+                if (info.size) descParts.push(`💾 ${info.size}`);
+                if (info.languages.length > 0) descParts.push(`🔊 ${info.languages.join(' ')}`);
+                if (info.seeders) descParts.push(`👤 ${info.seeders}`);
+
+                formattedDescription = descParts.join('\n');
             }
 
-            const qualityParts = [info.quality, info.resolution, info.type, info.hdr].filter(Boolean);
-            if (qualityParts.length > 0) {
-                descParts.push(`ℹ️ ${qualityParts.join(' / ')}`);
-            }
-
-            if (info.size) descParts.push(`💾 ${info.size}`);
-            if (info.languages.length > 0) descParts.push(`🔊 ${info.languages.join(' ')}`);
-            if (info.seeders) descParts.push(`👤 ${info.seeders}`);
-
-            formattedDescription = descParts.join('\n');
+            return {
+                ...stream,
+                name: formattedName,
+                description: formattedDescription,
+                behaviorHints: stream.behaviorHints || {}
+            };
+        } catch (error) {
+            // Fallback: retourne le stream original si le formatage échoue
+            console.warn(`[Formatter] Erreur formatage, fallback original:`, error.message);
+            return stream;
         }
-
-        return {
-            ...stream,
-            name: formattedName,
-            description: formattedDescription,
-            behaviorHints: stream.behaviorHints || {}
-        };
     }
 
     /**
