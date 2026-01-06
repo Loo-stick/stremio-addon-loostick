@@ -22,6 +22,7 @@ function createAddon(config = {}) {
         osApiKey = process.env.OPENSUBTITLES_API_KEY,
         osUserAgent = process.env.OPENSUBTITLES_USER_AGENT || 'stremio-subtitles-fr v1.0',
         subdlApiKey = process.env.SUBDL_API_KEY,
+        subdlEnabled = process.env.SUBDL_ENABLED !== 'false',
         enableMeta = process.env.ENABLE_META !== 'false',
         badgeInTitle = process.env.BADGE_IN_TITLE === 'true',
         cacheTtlDays = parseInt(process.env.CACHE_TTL_DAYS, 10) || 7,
@@ -92,10 +93,12 @@ function createAddon(config = {}) {
         console.log('[Subtitles] Source activée: OpenSubtitles');
     }
 
-    if (subdlApiKey && subdlApiKey !== 'your_api_key_here') {
+    if (subdlEnabled && subdlApiKey && subdlApiKey !== 'your_api_key_here') {
         subdlClient = new SubDLClient(subdlApiKey);
         sources.push('SubDL');
         console.log('[Subtitles] Source activée: SubDL');
+    } else if (!subdlEnabled && subdlApiKey) {
+        console.log('[Subtitles] SubDL désactivé via SUBDL_ENABLED=false');
     }
 
     if (sources.length === 0) {

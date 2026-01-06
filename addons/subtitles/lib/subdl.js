@@ -58,13 +58,26 @@ class SubDLClient {
             const response = await fetch(url.toString(), {
                 method: 'GET',
                 headers: {
-                    'Accept': 'application/json'
-                }
+                    'Accept': 'application/json',
+                    'User-Agent': 'Stremio-Addon/1.0'
+                },
+                timeout: 10000
             });
 
+            // Détection du blocage Cloudflare
+            if (response.status === 403) {
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('text/html')) {
+                    const body = await response.text();
+                    if (body.includes('cloudflare') || body.includes('Just a moment')) {
+                        throw new Error('Bloqué par Cloudflare - API SubDL inaccessible depuis ce serveur');
+                    }
+                }
+                throw new Error(`Accès refusé (403) - Vérifiez votre clé API`);
+            }
+
             if (!response.ok) {
-                const errorBody = await response.text();
-                throw new Error(`Erreur API SubDL: ${response.status} - ${errorBody}`);
+                throw new Error(`Erreur HTTP ${response.status}`);
             }
 
             const data = await response.json();
@@ -75,7 +88,8 @@ class SubDLClient {
 
             return data;
         } catch (error) {
-            console.error(`[SubDL] Erreur requête ${endpoint}:`, error.message);
+            // Log propre sans exposer l'URL complète (qui contient la clé API)
+            console.error(`[SubDL] Erreur requête ${endpoint}: ${error.message}`);
             throw error;
         }
     }
