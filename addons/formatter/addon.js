@@ -375,19 +375,33 @@ function createAddon(config = {}) {
             const baseUrl = addon.url.replace('/manifest.json', '');
             const streamUrl = `${baseUrl}/stream/${type}/${id}.json`;
 
-            console.log(`[Formatter] Fetch ${addon.name}`);
+            console.log(`[Formatter] Fetch ${addon.name}: ${streamUrl.substring(0, 80)}...`);
 
             const response = await fetch(streamUrl, {
                 timeout: 15000,
-                headers: { 'User-Agent': 'Stremio-Addon-Formatter/1.0' }
+                headers: {
+                    'User-Agent': 'Stremio/4.4.168',
+                    'Accept': 'application/json'
+                }
             });
 
-            if (!response.ok) return [];
+            console.log(`[Formatter] ${addon.name} HTTP ${response.status}`);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Formatter] ${addon.name} erreur: ${errorText.substring(0, 200)}`);
+                return [];
+            }
 
             const data = await response.json();
             const streams = data.streams || [];
 
             console.log(`[Formatter] ${addon.name}: ${streams.length} streams`);
+
+            // Debug si 0 streams
+            if (streams.length === 0) {
+                console.log(`[Formatter] ${addon.name} réponse: ${JSON.stringify(data).substring(0, 200)}`);
+            }
 
             return streams.map(stream => formatStream(stream, addon.name, addon.service));
         } catch (error) {
