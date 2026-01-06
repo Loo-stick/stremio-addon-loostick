@@ -19,6 +19,7 @@ const fetch = require('node-fetch');
  */
 function createAddon(config = {}) {
     const torboxApiKey = config.torboxApiKey || process.env.TORBOX_API_KEY || '';
+    const passthrough = process.env.FORMATTER_PASSTHROUGH === 'true';
 
     /**
      * Charge les addons depuis les variables d'environnement
@@ -403,6 +404,12 @@ function createAddon(config = {}) {
                 console.log(`[Formatter] ${addon.name} réponse: ${JSON.stringify(data).substring(0, 200)}`);
             }
 
+            // Passthrough: retourne les streams sans formatage
+            if (passthrough) {
+                console.log(`[Formatter] Mode passthrough activé`);
+                return streams;
+            }
+
             return streams.map(stream => formatStream(stream, addon.name, addon.service));
         } catch (error) {
             console.error(`[Formatter] Erreur ${addon.name}:`, error.message);
@@ -482,6 +489,10 @@ function createAddon(config = {}) {
     if (ADDONS.length === 0) {
         console.warn('[Formatter] Addon désactivé (aucune source configurée)');
         return null;
+    }
+
+    if (passthrough) {
+        console.log('[Formatter] Mode PASSTHROUGH activé - streams non formatés');
     }
 
     // Crée le builder combiné (principal)
