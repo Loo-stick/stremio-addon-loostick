@@ -323,6 +323,98 @@ class FranceTVClient {
     }
 
     /**
+     * Récupère les informations d'un programme (série) avec tous ses épisodes
+     *
+     * @param {string} programPath - Chemin du programme (ex: france-2_il-etait-deux-fois)
+     * @returns {Promise<Object|null>} Infos du programme avec épisodes
+     */
+    async getProgramInfo(programPath) {
+        return cached(`program_${programPath}`, async () => {
+            console.log(`[FranceTV] Récupération programme ${programPath}...`);
+
+            try {
+                const data = await this._fetch(
+                    `${API_MOBILE_URL}/apps/program/${programPath}?platform=apps`
+                );
+
+                if (!data || !data.item) {
+                    console.log(`[FranceTV] Programme non trouvé: ${programPath}`);
+                    return null;
+                }
+
+                const item = data.item;
+
+                // Récupère l'image du programme
+                let image = null;
+                let poster = null;
+                let background = null;
+                if (item.images) {
+                    for (const img of item.images) {
+                        if (img.type === 'vignette_16x9' && img.urls) {
+                            image = img.urls['w:1024'] || img.urls['w:800'];
+                            background = image;
+                        }
+                        if (img.type === 'vignette_3x4' && img.urls) {
+                            poster = img.urls['w:800'] || img.urls['w:400'];
+                        }
+                    }
+                }
+
+                // Récupère les épisodes depuis les collections
+                const episodes = [];
+                if (data.collections) {
+                    for (const collection of data.collections) {
+                        // Cherche la collection des épisodes
+                        if (collection.type === 'playlist_video' && collection.items) {
+                            for (const ep of collection.items) {
+                                if (ep.si_id) {
+                                    // Récupère l'image de l'épisode
+                                    let epImage = null;
+                                    if (ep.images) {
+                                        for (const img of ep.images) {
+                                            if (img.type === 'vignette_16x9' && img.urls) {
+                                                epImage = img.urls['w:800'] || img.urls['w:400'];
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    episodes.push({
+                                        id: ep.si_id,
+                                        title: ep.title || ep.label,
+                                        season: ep.season || 1,
+                                        episode: ep.episode || episodes.length + 1,
+                                        description: ep.description,
+                                        duration: ep.duration,
+                                        thumbnail: epImage || image
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                console.log(`[FranceTV] Programme ${programPath}: ${episodes.length} épisodes trouvés`);
+
+                return {
+                    id: programPath,
+                    title: item.label || item.title,
+                    description: item.description,
+                    image: image,
+                    poster: poster,
+                    background: background,
+                    type: 'series',
+                    episodes: episodes
+                };
+
+            } catch (error) {
+                console.error(`[FranceTV] Erreur programme ${programPath}:`, error.message);
+                return null;
+            }
+        });
+    }
+
+    /**
      * Récupère le stream live d'une chaîne
      *
      * @param {string} channelId - ID de la chaîne
@@ -357,34 +449,46 @@ class FranceTVClient {
     }
 
     /**
-     * Formate une vidéo depuis l'API
+     * Formate une vidéo ou un programme depuis l'API
      *
      * @param {Object} item - Item de l'API
-     * @returns {Object|null} Vidéo formatée
+     * @returns {Object|null} Vidéo/Programme formaté
      * @private
      */
     _formatVideo(item) {
-        if (!item || !item.si_id) return null;
+        if (!item) return null;
 
-        // Récupère l'image
+        // Détecte si c'est un programme (série) ou une vidéo
+        const isProgram = item.type === 'program' && item.program_path;
+
+        // Pour les programmes, on utilise program_path, sinon si_id
+        if (!isProgram && !item.si_id) return null;
+
+        // Récupère les images
         let image = null;
+        let poster = null;
         if (item.images) {
             for (const img of item.images) {
                 if (img.type === 'vignette_16x9' && img.urls) {
                     image = img.urls['w:1024'] || img.urls['w:800'];
-                    break;
+                }
+                if (img.type === 'vignette_3x4' && img.urls) {
+                    poster = img.urls['w:800'] || img.urls['w:400'];
                 }
             }
         }
 
         return {
-            id: item.si_id,
+            id: isProgram ? `program:${item.program_path}` : item.si_id,
             title: item.title || item.label,
             description: item.description,
             duration: item.duration,
             image: image,
+            poster: poster,
             channel: item.channel?.label,
-            type: item.type
+            type: item.type,
+            isProgram: isProgram,
+            programPath: item.program_path
         };
     }
 

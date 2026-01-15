@@ -46,7 +46,7 @@ function createAddon(config = {}) {
 
     // Catalog handler
     builder.defineCatalogHandler(async ({ type, id, extra }) => {
-        console.log(`[France.tv] Catalogue: ${id}`);
+        console.log(`[France.tv] Catalogue: ${id} (type: ${type})`);
 
         const skip = parseInt(extra?.skip) || 0;
         const limit = 50;
@@ -64,15 +64,19 @@ function createAddon(config = {}) {
             }
 
             const paginated = videos.slice(skip, skip + limit);
-            const metas = paginated.map(video => ({
-                id: `${ID_PREFIX}${video.id}`,
-                type: type,
-                name: video.title,
-                poster: video.image,
-                posterShape: 'landscape',
-                description: video.description,
-                background: video.image
-            }));
+            const metas = paginated.map(video => {
+                // Utilise le type 'series' pour les programmes, sinon le type demandé
+                const itemType = video.isProgram ? 'series' : type;
+                return {
+                    id: `${ID_PREFIX}${video.id}`,
+                    type: itemType,
+                    name: video.title,
+                    poster: video.poster || video.image,
+                    posterShape: video.poster ? 'poster' : 'landscape',
+                    description: video.description,
+                    background: video.image
+                };
+            });
 
             console.log(`[France.tv] ${metas.length} résultats`);
             return { metas };
@@ -84,12 +88,48 @@ function createAddon(config = {}) {
 
     // Meta handler
     builder.defineMetaHandler(async ({ type, id }) => {
-        console.log(`[France.tv] Meta: ${id}`);
+        console.log(`[France.tv] Meta: ${id} (type: ${type})`);
 
-        const videoId = id.replace(ID_PREFIX, '');
+        const contentId = id.replace(ID_PREFIX, '');
 
         try {
-            const video = await francetv.getVideoInfo(videoId);
+            // Vérifie si c'est un programme (série)
+            if (contentId.startsWith('program:')) {
+                const programPath = contentId.replace('program:', '');
+                const program = await francetv.getProgramInfo(programPath);
+
+                if (!program) return { meta: null };
+
+                // Formate les épisodes pour Stremio
+                const videos = program.episodes.map(ep => ({
+                    id: `${ID_PREFIX}${ep.id}`,
+                    title: ep.title,
+                    season: ep.season,
+                    episode: ep.episode,
+                    thumbnail: ep.thumbnail,
+                    overview: ep.description,
+                    released: new Date().toISOString()
+                }));
+
+                console.log(`[France.tv] Programme ${program.title}: ${videos.length} épisodes`);
+
+                return {
+                    meta: {
+                        id: id,
+                        type: 'series',
+                        name: program.title,
+                        poster: program.poster || program.image,
+                        posterShape: program.poster ? 'poster' : 'landscape',
+                        background: program.background || program.image,
+                        description: program.description,
+                        genres: ['France.tv', 'Replay'],
+                        videos: videos
+                    }
+                };
+            }
+
+            // Sinon c'est une vidéo individuelle
+            const video = await francetv.getVideoInfo(contentId);
             if (!video) return { meta: null };
 
             const hours = Math.floor((video.duration || 0) / 3600);
