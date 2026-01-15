@@ -269,7 +269,7 @@ class FranceTVClient {
     }
 
     /**
-     * Récupère le contenu rugby (filtré depuis sport)
+     * Récupère le contenu rugby depuis le programme dédié
      *
      * @returns {Promise<Array>} Liste des vidéos rugby
      */
@@ -278,29 +278,18 @@ class FranceTVClient {
             console.log(`[FranceTV] Récupération contenu rugby...`);
 
             const data = await this._fetch(
-                `${API_MOBILE_URL}/apps/channels/sport?platform=apps`
+                `${API_MOBILE_URL}/apps/program/sport_rugby?platform=apps`
             );
 
             const videos = [];
-            const rugbyKeywords = ['rugby', ' xv', 'top 14', 'six nations', 'champions cup', 'challenge cup', 'pro d2', 'crunch', 'all blacks', 'springboks', 'wallabies'];
 
             if (data.collections) {
                 for (const collection of data.collections) {
                     if (collection.items) {
                         for (const item of collection.items) {
-                            const title = (item.title || item.label || '').toLowerCase();
-                            const desc = (item.description || '').toLowerCase();
-
-                            // Filtre par mots-clés rugby
-                            const isRugby = rugbyKeywords.some(kw =>
-                                title.includes(kw) || desc.includes(kw)
-                            );
-
-                            if (isRugby) {
-                                const video = this._formatVideo(item);
-                                if (video) {
-                                    videos.push(video);
-                                }
+                            const video = this._formatVideo(item);
+                            if (video) {
+                                videos.push(video);
                             }
                         }
                     }
