@@ -9,6 +9,7 @@
  * - /arte        : Streaming Arte.tv
  * - /formatter   : Agrégateur de streams reformatés
  * - /tvloo       : Chaînes sportives françaises (M3U)
+ * - /tf1         : Replay et Direct TF1+ (TF1, TMC, TFX, LCI)
  *
  * @version 1.2.0
  */
@@ -30,6 +31,7 @@ const createFrancetvAddon = require('./addons/francetv/addon');
 const createArteAddon = require('./addons/arte/addon');
 const createFormatterAddon = require('./addons/formatter/addon');
 const createTvlooAddon = require('./addons/tvloo/addon');
+const createTF1Addon = require('./addons/tf1/addon');
 
 // Serveur Express principal
 const app = express();
@@ -104,6 +106,7 @@ mountAddon('/francetv', createFrancetvAddon);
 mountAddon('/arte', createArteAddon);
 mountAddon('/formatter', createFormatterAddon);
 mountAddon('/tvloo', createTvlooAddon);
+mountAddon('/tf1', createTF1Addon);
 
 // Route racine - liste des addons
 app.get('/', (req, res) => {
