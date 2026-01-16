@@ -5,10 +5,14 @@
  * Les credentials sont lus depuis les variables d'environnement
  * TF1_EMAIL et TF1_PASSWORD - JAMAIS stockés dans le code
  *
+ * Proxy SOCKS5 optionnel (ex: NordVPN) via:
+ * TF1_PROXY_HOST, TF1_PROXY_PORT, TF1_PROXY_USER, TF1_PROXY_PASS
+ *
  * @module lib/tf1
  */
 
 const fetch = require('node-fetch');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 
 /** URL de l'API Gigya pour l'authentification */
 const GIGYA_LOGIN_URL = 'https://compte.tf1.fr/accounts.login';
@@ -29,6 +33,37 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 /** Token d'authentification (en mémoire, jamais persisté) */
 let authToken = null;
 let authTokenExpiry = 0;
+
+/** Agent proxy SOCKS5 (optionnel) */
+let proxyAgent = null;
+
+/**
+ * Crée l'agent proxy SOCKS5 si configuré
+ * @returns {SocksProxyAgent|null}
+ */
+function createProxyAgent() {
+    const host = process.env.TF1_PROXY_HOST;
+    const port = process.env.TF1_PROXY_PORT || '1080';
+    const user = process.env.TF1_PROXY_USER;
+    const pass = process.env.TF1_PROXY_PASS;
+
+    if (!host) {
+        return null;
+    }
+
+    let proxyUrl;
+    if (user && pass) {
+        proxyUrl = `socks5://${user}:${pass}@${host}:${port}`;
+    } else {
+        proxyUrl = `socks5://${host}:${port}`;
+    }
+
+    console.log(`[TF1] Proxy SOCKS5 configuré: ${host}:${port}`);
+    return new SocksProxyAgent(proxyUrl);
+}
+
+// Initialise le proxy au chargement du module
+proxyAgent = createProxyAgent();
 
 /**
  * Récupère une valeur du cache ou exécute la fonction
@@ -83,7 +118,7 @@ class TF1Client {
     }
 
     /**
-     * Effectue une requête HTTP
+     * Effectue une requête HTTP (avec proxy si configuré)
      *
      * @param {string} url - URL à appeler
      * @param {Object} options - Options fetch
@@ -96,11 +131,18 @@ class TF1Client {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         };
 
+        const fetchOptions = {
+            ...options,
+            headers: { ...defaultHeaders, ...options.headers }
+        };
+
+        // Utilise le proxy SOCKS5 si configuré
+        if (proxyAgent) {
+            fetchOptions.agent = proxyAgent;
+        }
+
         try {
-            const response = await fetch(url, {
-                ...options,
-                headers: { ...defaultHeaders, ...options.headers }
-            });
+            const response = await fetch(url, fetchOptions);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -132,14 +174,20 @@ class TF1Client {
         params.append('loginID', this.email);
         params.append('password', this.password);
 
-        const response = await fetch(GIGYA_LOGIN_URL, {
+        const fetchOptions = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             },
             body: params
-        });
+        };
+
+        if (proxyAgent) {
+            fetchOptions.agent = proxyAgent;
+        }
+
+        const response = await fetch(GIGYA_LOGIN_URL, fetchOptions);
 
         const data = await response.json();
 
@@ -167,7 +215,7 @@ class TF1Client {
     async _getToken(gigyaSession) {
         console.log('[TF1] Obtention du token TF1...');
 
-        const response = await fetch(TOKEN_URL, {
+        const fetchOptions = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -179,7 +227,13 @@ class TF1Client {
                 signature: gigyaSession.signature,
                 timestamp: gigyaSession.timestamp
             })
-        });
+        };
+
+        if (proxyAgent) {
+            fetchOptions.agent = proxyAgent;
+        }
+
+        const response = await fetch(TOKEN_URL, fetchOptions);
 
         const data = await response.json();
 
@@ -236,13 +290,19 @@ class TF1Client {
             const token = await this.ensureToken();
 
             const url = `${MEDIAINFO_URL}/${mediaId}?context=MYTF1&pver=5010000`;
-            const response = await fetch(url, {
+            const fetchOptions = {
                 headers: {
                     'Accept': 'application/json',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Authorization': `Bearer ${token}`
                 }
-            });
+            };
+
+            if (proxyAgent) {
+                fetchOptions.agent = proxyAgent;
+            }
+
+            const response = await fetch(url, fetchOptions);
 
             const data = await response.json();
             const media = data.media || {};
