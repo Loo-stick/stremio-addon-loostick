@@ -438,6 +438,69 @@ class FranceTVClient {
     }
 
     /**
+     * Récupère tous les directs des chaînes France TV
+     *
+     * @returns {Promise<Array>} Liste des chaînes en direct
+     */
+    async getLiveChannels() {
+        return cached('live_channels', async () => {
+            console.log(`[FranceTV] Récupération des directs...`);
+
+            const liveChannels = [];
+            const channelsToCheck = ['france-2', 'france-3', 'france-4', 'france-5', 'franceinfo'];
+
+            for (const channelId of channelsToCheck) {
+                try {
+                    const data = await this._fetch(
+                        `${API_MOBILE_URL}/apps/channels/${channelId}?platform=apps`
+                    );
+
+                    if (data.collections) {
+                        for (const collection of data.collections) {
+                            if (collection.type === 'live' && collection.items && collection.items[0]) {
+                                const liveItem = collection.items[0];
+                                const channel = liveItem.channel;
+
+                                if (channel && channel.si_id) {
+                                    // Récupère l'image de la chaîne
+                                    let image = null;
+                                    if (data.item && data.item.images) {
+                                        for (const img of data.item.images) {
+                                            if (img.type === 'vignette_16x9' && img.urls) {
+                                                image = img.urls['w:1024'] || img.urls['w:800'];
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    // Nom de la chaîne formaté
+                                    const channelName = data.label || channelId.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+                                    liveChannels.push({
+                                        id: `live:${channel.si_id}`,
+                                        title: `${channelName} - Direct`,
+                                        description: liveItem.title || `En direct sur ${channelName}`,
+                                        image: image,
+                                        channelId: channelId,
+                                        liveId: channel.si_id,
+                                        isLive: true
+                                    });
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[FranceTV] Erreur live ${channelId}:`, error.message);
+                }
+            }
+
+            console.log(`[FranceTV] ${liveChannels.length} directs trouvés`);
+            return liveChannels;
+        });
+    }
+
+    /**
      * Formate une vidéo ou un programme depuis l'API
      *
      * @param {Object} item - Item de l'API

@@ -28,6 +28,7 @@ function createAddon(config = {}) {
         resources: ['catalog', 'meta', 'stream'],
         types: ['movie', 'series', 'tv'],
         catalogs: [
+            { type: 'tv', id: 'francetv-direct', name: '📡 Direct' },
             { type: 'movie', id: 'francetv-france-2', name: 'France 2', extra: [{ name: 'skip', isRequired: false }] },
             { type: 'movie', id: 'francetv-france-3', name: 'France 3', extra: [{ name: 'skip', isRequired: false }] },
             { type: 'movie', id: 'francetv-france-5', name: 'France 5', extra: [{ name: 'skip', isRequired: false }] },
@@ -53,6 +54,23 @@ function createAddon(config = {}) {
         const channelId = id.replace('francetv-', '');
 
         try {
+            // Gestion du catalogue Direct (lives)
+            if (channelId === 'direct') {
+                const liveChannels = await francetv.getLiveChannels();
+                const metas = liveChannels.map(live => ({
+                    id: `${ID_PREFIX}${live.id}`,
+                    type: 'tv',
+                    name: live.title,
+                    poster: live.image,
+                    posterShape: 'landscape',
+                    description: live.description,
+                    background: live.image
+                }));
+
+                console.log(`[France.tv] ${metas.length} directs`);
+                return { metas };
+            }
+
             let videos = [];
 
             if (channelId === 'rugby') {
@@ -93,6 +111,27 @@ function createAddon(config = {}) {
         const contentId = id.replace(ID_PREFIX, '');
 
         try {
+            // Vérifie si c'est un live (direct)
+            if (contentId.startsWith('live:')) {
+                const liveId = contentId.replace('live:', '');
+                const video = await francetv.getVideoInfo(liveId);
+
+                if (!video) return { meta: null };
+
+                return {
+                    meta: {
+                        id: id,
+                        type: 'tv',
+                        name: video.title || 'Direct France TV',
+                        poster: video.image,
+                        posterShape: 'landscape',
+                        background: video.image,
+                        description: video.description || 'En direct sur France TV',
+                        genres: ['France.tv', 'Direct']
+                    }
+                };
+            }
+
             // Vérifie si c'est un programme (série)
             if (contentId.startsWith('program:')) {
                 const programPath = contentId.replace('program:', '');
@@ -159,7 +198,13 @@ function createAddon(config = {}) {
     builder.defineStreamHandler(async ({ type, id }) => {
         console.log(`[France.tv] Stream: ${id}`);
 
-        const videoId = id.replace(ID_PREFIX, '');
+        let videoId = id.replace(ID_PREFIX, '');
+
+        // Gestion des lives
+        const isLive = videoId.startsWith('live:');
+        if (isLive) {
+            videoId = videoId.replace('live:', '');
+        }
 
         try {
             const video = await francetv.getVideoInfo(videoId);
@@ -183,10 +228,15 @@ function createAddon(config = {}) {
                 return { streams: [] };
             }
 
+            // Pour les lives, on ajoute un indicateur
+            const streamTitle = isLive
+                ? `🔴 ${video.title || 'Direct'}\n🇫🇷 Français`
+                : `${video.title}\n🇫🇷 Français`;
+
             return {
                 streams: [{
                     name: 'France.tv',
-                    title: `${video.title}\n🇫🇷 Français`,
+                    title: streamTitle,
                     url: video.streamUrl,
                     behaviorHints: { notWebReady: false }
                 }]
